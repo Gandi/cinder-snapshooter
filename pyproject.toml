@@ -1,0 +1,68 @@
+[tool.poetry]
+name = "cinder_snapshooter"
+version = "0.1.0"
+description = "A set of scripts to run periodically in order to automate cinder snapshot creation/deletion"
+authors = [
+    "Nicolas Belouin <nicolas.belouin@gandi.net>"
+]
+license = "Apache-2.0"
+
+readme = "README.md"
+
+packages = [
+    { include = "cinder_snapshooter", from = "src" }
+]
+include = [
+    { path = "tests", format = "sdist" }
+]
+
+
+
+[tool.poetry.dependencies]
+python = "^3.7"
+openstacksdk = "^0.61.0"
+structlog = "^21.4.0"
+python-dateutil = "^2.8.2"
+
+[tool.poetry.dev-dependencies]
+rich = "^10.15.2"
+black = "^21.11b1"
+pytest = "^6.2.5"
+pytest-mock = "^3.6.1"
+Faker = "^9.9.0"
+pytest-cov = "^3.0.0"
+time-machine = "^2.4.1"
+pylint = "^2.12.2"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+cinder-snapshooter-creator = 'cinder_snapshooter.snapshot_creator:cli'
+cinder-snapshooter-destroyer = 'cinder_snapshooter.snapshot_destroyer:cli'
+
+[tool.black]
+target-version = ['py37']
+
+[tool.isort]
+py_version = 37
+profile = "black"
+force_single_line = false
+combine_as_imports = true
+lines_between_types = 1
+lines_after_imports = 2
+src_paths = ["src", "tests"]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --cov=cinder_snapshooter"
+testpaths = [
+    "tests",
+]
+
+[tool.pylint.messages_control]
+disable = "C0330, C0326"
+
+[tool.pylint.format]
+max-line-length = "88"
