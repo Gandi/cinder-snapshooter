@@ -17,6 +17,7 @@ limitations under the License.
 SPDX-License-Identifier: Apache-2.0
 """
 import datetime
+import sys
 
 import structlog
 
@@ -67,7 +68,7 @@ def create_snapshot_if_needed(
                 volume=volume.id,
                 snapshot=snapshot.id,
             )
-            return
+            return 0
 
     if is_monthly:
         expiry_date = now + relativedelta(months=+3)
@@ -89,11 +90,15 @@ def create_snapshot_if_needed(
             expire_at=expiry_date.date().isoformat(),
             monthly=is_monthly,
         )
+        return 1
+    return 0
 
 
 def process_volumes(os_client, dry_run, all_projects):
     """Process all volumes searching for the ones with automatic snapshots"""
     all_projects = True if all_projects else None
+    snapshot_created = 0
+    errors = 0
     for volume in os_client.block_storage.volumes(
         all_projects=all_projects,
     ):
@@ -101,19 +106,27 @@ def process_volumes(os_client, dry_run, all_projects):
             continue
         log.debug("Processing volume", volume=volume.id)
         if str2bool(volume.metadata.get("automatic_snapshots", "false")):
-            create_snapshot_if_needed(
-                volume,
-                os_client,
-                all_projects,
-                dry_run,
-            )
+            try:
+                snapshot_created += create_snapshot_if_needed(
+                    volume,
+                    os_client,
+                    all_projects,
+                    dry_run,
+                )
+            except Exception:
+                log.exception("Unable to create snapshot", volume=volume.id)
+                errors += 1
+    log.info("All volumes processed", snapshot_created=snapshot_created, errors=errors)
+    return errors == 0
 
 
 def cli():
     """Entrypoint for CLI usage"""
     os_client, dry_run, all_projects = setup_cli()
 
-    process_volumes(os_client, dry_run, all_projects)
+    if process_volumes(os_client, dry_run, all_projects):
+        return
+    sys.exit(1)  # Something went wrong during execution exit with 1
 
 
 if __name__ == "__main__":  # pragma: no cover

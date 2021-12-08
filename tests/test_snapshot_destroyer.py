@@ -16,30 +16,40 @@ limitations under the License.
 SPDX-License-Identifier: Apache-2.0
 """
 import datetime
+import sys
 
 import pytest
 
 import cinder_snapshooter.snapshot_destroyer
+
 from fixtures import FakeSnapshot
 
 
-def test_cli(mocker, faker):
+@pytest.mark.parametrize("success", [True, False])
+def test_cli(mocker, faker, success):
     mocker.patch("cinder_snapshooter.snapshot_destroyer.setup_cli")
     mocker.patch("cinder_snapshooter.snapshot_destroyer.process_snapshots")
+    mocker.patch("sys.exit")
     fake_return = (mocker.MagicMock(), faker.boolean, faker.boolean)
+    cinder_snapshooter.snapshot_destroyer.process_snapshots.return_value = success
     cinder_snapshooter.snapshot_destroyer.setup_cli.return_value = fake_return
     cinder_snapshooter.snapshot_destroyer.cli()
     cinder_snapshooter.snapshot_destroyer.setup_cli.assert_called_once_with()
     cinder_snapshooter.snapshot_destroyer.process_snapshots.assert_called_once_with(
         *fake_return
     )
+    if not success:
+        sys.exit.assert_called_once_with(1)
 
 
 @pytest.mark.parametrize("dry_run", [True, False], ids=["dry-run", "real-run"])
 @pytest.mark.parametrize(
     "all_projects", [True, False], ids=["all-projects", "single-project"]
 )
-def test_process_snapshots(mocker, faker, time_machine, dry_run, all_projects):
+@pytest.mark.parametrize("success", [True, False])
+def test_process_snapshots(
+    mocker, faker, log, time_machine, dry_run, all_projects, success
+):
     os_client = mocker.MagicMock()
     manual_snapshots = [
         FakeSnapshot(
@@ -68,6 +78,20 @@ def test_process_snapshots(mocker, faker, time_machine, dry_run, all_projects):
         )
         for i in range(10)
     ]
+    nok_snapshot = []
+    if not success:
+        nok_snapshot = [
+            FakeSnapshot(
+                id=faker.uuid4(),
+                status="available",
+                created_at=faker.date_time_this_century(
+                    tzinfo=datetime.timezone.utc
+                ).isoformat(),
+                volume_id=faker.uuid4(),
+                metadata={"expire_at": faker.date(end_datetime=now)},
+            )
+            for i in range(10)
+        ]
     not_expired_snapshot = [
         FakeSnapshot(
             id=faker.uuid4(),
@@ -83,11 +107,24 @@ def test_process_snapshots(mocker, faker, time_machine, dry_run, all_projects):
             },
         )
     ]
-    snapshots = manual_snapshots + not_expired_snapshot + expired_snapshot
+    snapshots = (
+        manual_snapshots + not_expired_snapshot + expired_snapshot + nok_snapshot
+    )
     os_client.block_storage.snapshots.return_value = snapshots
 
-    cinder_snapshooter.snapshot_destroyer.process_snapshots(
-        os_client, dry_run, all_projects
+    def delete_snapshot(isnapshot):
+        if isnapshot in nok_snapshot:
+            raise Exception()
+        return 1
+
+    os_client.block_storage.delete_snapshot.side_effect = delete_snapshot
+
+    assert (
+        cinder_snapshooter.snapshot_destroyer.process_snapshots(
+            os_client, dry_run, all_projects
+        )
+        == success
+        or dry_run
     )
     if not all_projects:
         all_projects = None
@@ -99,6 +136,13 @@ def test_process_snapshots(mocker, faker, time_machine, dry_run, all_projects):
         os_client.block_storage.delete_snapshot.assert_not_called()
         return
 
-    assert os_client.block_storage.delete_snapshot.call_count == len(expired_snapshot)
-    for snapshot in expired_snapshot:
+    assert os_client.block_storage.delete_snapshot.call_count == len(
+        expired_snapshot
+    ) + len(nok_snapshot)
+    for snapshot in expired_snapshot + nok_snapshot:
         os_client.block_storage.delete_snapshot.assert_any_call(snapshot)
+    assert log.has(
+        "Processed all snapshots",
+        destroyed_snapshot=len(expired_snapshot),
+        errors=len(nok_snapshot),
+    )
