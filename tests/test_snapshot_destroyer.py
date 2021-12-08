@@ -15,6 +15,7 @@ limitations under the License.
 
 SPDX-License-Identifier: Apache-2.0
 """
+import argparse
 import datetime
 import sys
 
@@ -27,16 +28,19 @@ from fixtures import FakeSnapshot
 
 @pytest.mark.parametrize("success", [True, False])
 def test_cli(mocker, faker, success):
-    mocker.patch("cinder_snapshooter.snapshot_destroyer.setup_cli")
     mocker.patch("cinder_snapshooter.snapshot_destroyer.process_snapshots")
     mocker.patch("sys.exit")
-    fake_return = (mocker.MagicMock(), faker.boolean, faker.boolean)
     cinder_snapshooter.snapshot_destroyer.process_snapshots.return_value = success
-    cinder_snapshooter.snapshot_destroyer.setup_cli.return_value = fake_return
-    cinder_snapshooter.snapshot_destroyer.cli()
-    cinder_snapshooter.snapshot_destroyer.setup_cli.assert_called_once_with()
+    fake_args = argparse.Namespace(
+        dry_run=faker.boolean(),
+        all_projects=faker.boolean(),
+        os_client=mocker.MagicMock(),
+    )
+    cinder_snapshooter.snapshot_destroyer.cli(fake_args)
     cinder_snapshooter.snapshot_destroyer.process_snapshots.assert_called_once_with(
-        *fake_return
+        fake_args.os_client,
+        fake_args.dry_run,
+        fake_args.all_projects,
     )
     if not success:
         sys.exit.assert_called_once_with(1)

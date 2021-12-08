@@ -16,72 +16,13 @@ limitations under the License.
 
 SPDX-License-Identifier: Apache-2.0
 """
-import argparse
 import logging
-import os
 
-import openstack
 import structlog
-
-
-def register_args(parser: argparse.ArgumentParser):
-    """Registers arguments to parse using argparse"""
-    parser.add_argument(
-        "--os-cloud",
-        dest="os_cloud",
-        default=os.environ.get("OS_CLOUD"),
-        help="The cloud to connect to",
-    )
-    parser.add_argument(
-        "-a",
-        "--all-projects",
-        help="Run on all projects",
-        action="store_true",
-        default="ALL_PROJECTS" in os.environ,
-    )
-    parser.add_argument(
-        "-n",
-        "--dry-run",
-        action="store_true",
-        help="Do not create any snapshot, only pretend to",
-    )
-
-    logging_group = parser.add_argument_group(
-        "logging",
-        "logging specific options",
-    )
-    logging_group.add_argument(
-        "--devel", help="print logs in human readable format", action="store_true"
-    )
-    logging_group.add_argument(
-        "-v",
-        "--verbose",
-        action="count",
-        default=0,
-        help="increase output verbosity",
-    )
-
-
-def setup_cli():
-    """Setup CLI argument parsing and logging"""
-    parser = argparse.ArgumentParser()
-    register_args(parser)
-    args = parser.parse_args()
-
-    setup_logging(args)
-
-    os_client = openstack.connect(cloud=args.os_cloud)
-
-    return os_client, args.dry_run, args.all_projects
 
 
 def setup_logging(args):
     """Setup logging framework"""
-    if args.devel:
-        renderer = structlog.dev.ConsoleRenderer()
-    else:
-        renderer = structlog.processors.JSONRenderer()
-
     if args.verbose >= 1:
         log_level = logging.DEBUG
     else:
@@ -95,6 +36,12 @@ def setup_logging(args):
         structlog.dev.set_exc_info,
         time_stamper,
     ]
+
+    if args.devel:
+        renderer = structlog.dev.ConsoleRenderer()
+    else:
+        renderer = structlog.processors.JSONRenderer()
+        shared_processors.append(structlog.processors.format_exc_info)
 
     structlog.configure(
         processors=shared_processors

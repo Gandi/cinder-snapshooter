@@ -40,8 +40,7 @@ requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
-cinder-snapshooter-creator = 'cinder_snapshooter.snapshot_creator:cli'
-cinder-snapshooter-destroyer = 'cinder_snapshooter.snapshot_destroyer:cli'
+cinder-snapshooter = 'cinder_snapshooter.cli:cli'
 
 [tool.black]
 target-version = ['py37']

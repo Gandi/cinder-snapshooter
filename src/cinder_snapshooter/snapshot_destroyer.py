@@ -17,14 +17,14 @@ limitations under the License.
 SPDX-License-Identifier: Apache-2.0
 """
 import datetime
+import os
 import sys
 
 import structlog
 
-from .utils import setup_cli
-
 
 log = structlog.get_logger()
+cmd_help = "Destroys expired snapshots"
 
 
 def process_snapshots(os_client, dry_run, all_projects):
@@ -74,14 +74,26 @@ def process_snapshots(os_client, dry_run, all_projects):
     return errors == 0
 
 
-def cli():
-    """Entrypoint for CLI usage"""
-    os_client, dry_run, all_projects = setup_cli()
+def register_args(parser):
+    """Registers subcommand specific arguments to parse using argparse"""
+    parser.add_argument(
+        "-n",
+        "--dry-run",
+        action="store_true",
+        help="Do not create any snapshot, only pretend to",
+    )
+    parser.add_argument(
+        "-a",
+        "--all-projects",
+        help="Run on all projects",
+        action="store_true",
+        default="ALL_PROJECTS" in os.environ,
+    )
 
-    if process_snapshots(os_client, dry_run, all_projects):
+
+def cli(args):
+    """Entrypoint for CLI subcommand"""
+
+    if process_snapshots(args.os_client, args.dry_run, args.all_projects):
         return
     sys.exit(1)  # Something went wrong during execution exit with 1
-
-
-if __name__ == "__main__":  # pragma: no cover
-    cli()
