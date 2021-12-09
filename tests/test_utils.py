@@ -64,7 +64,7 @@ def test_setup_logging(mocker, faker, devel, verbose):
 
     assert structlog.stdlib.ProcessorFormatter.call_count == 1
     assert isinstance(
-        structlog.stdlib.ProcessorFormatter.call_args.kwargs["processors"][-1],
+        structlog.stdlib.ProcessorFormatter.call_args[1]["processors"][-1],
         processor_class,
     )
     loggers[""].setLevel.assert_called_once_with(
