@@ -1,3 +1,4 @@
+[![CI](https://github.com/diconico07/cinder-snapshooter/actions/workflows/CI.yml/badge.svg?event=push)](https://github.com/diconico07/cinder-snapshooter/actions/workflows/CI.yml)
 # Cinder-snapshooter
 This is a collection of scripts to allow automatic snapshot creation on Openstack Cinder Volumes
 
