@@ -81,4 +81,4 @@ def setup_logging(args):
 
 def str2bool(value: str) -> bool:
     """Convert a string to a boolean using the content of the string"""
-    return value.lower() in ["true", "yes"]
+    return value.lower() in ["true", "yes", "y", "1"]

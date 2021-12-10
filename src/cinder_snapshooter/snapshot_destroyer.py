@@ -22,6 +22,8 @@ import sys
 
 import structlog
 
+from .utils import str2bool
+
 
 log = structlog.get_logger()
 cmd_help = "Destroys expired snapshots"
@@ -87,7 +89,7 @@ def register_args(parser):
         "--all-projects",
         help="Run on all projects",
         action="store_true",
-        default="ALL_PROJECTS" in os.environ,
+        default=str2bool(os.environ.get("ALL_PROJECTS", "false")),
     )
 
 
