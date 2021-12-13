@@ -135,7 +135,7 @@ def register_args(parser):
         "--all-projects",
         help="Run on all projects",
         action="store_true",
-        default="ALL_PROJECTS" in os.environ,
+        default=str2bool(os.environ.get("ALL_PROJECTS", "false")),
     )
 
 
