@@ -17,6 +17,14 @@ you can do so using the following openstack command:
 openstack volume set --property automatic_snapshots=true "<volume_id>"
 ```
 
+### Use the docker image
+This project comes with a `Dockerfile` to generate a docker image. 
+
+You can use it this way (here with snapshot creator):
+```sh
+docker run --mount type=bind,src=$HOME/.config/openstack,dst=/root/.config/openstack -e OS_CLOUD=gandi ghcr.io/diconico07/cinder-snapshooter:latest creator
+```
+
 ### Run automatically using systemd timers
 You can use a set of two systemd timers+service to handle the creation and deletion of snapshots, here is an example
 of such units for `cinder-snapshooter creator`.
