@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "cinder_snapshooter"
-version = "0.1.0"
+version = "1.0.0"
 description = "A set of scripts to run periodically in order to automate cinder snapshot creation/deletion"
 authors = [
     "Nicolas Belouin <nicolas.belouin@gandi.net>"
