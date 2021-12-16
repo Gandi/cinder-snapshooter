@@ -93,7 +93,7 @@ def test_process_volumes(mocker, faker, log, all_projects, dry_run, success):
     def create_snapshot_if_needed(ivolume, _client, _all_projects, _dry_run):
         if ivolume in nok_volumes:
             raise Exception()
-        return 1
+        return ["a snapshot"]
 
     os_client.block_storage.volumes.return_value = volumes
     cinder_snapshooter.snapshot_creator.create_snapshot_if_needed.side_effect = (
@@ -196,9 +196,16 @@ def test_create_snapshot_if_needed(
             )
         )
     os_client.block_storage.snapshots.return_value = snapshots
+    os_client.block_storage.create_snapshot.return_value = FakeSnapshot(
+        id=faker.uuid4(),
+        status="available",
+        volume_id=volume.id,
+        metadata={},
+        created_at=now.isoformat(),
+    )
     time_machine.move_to(now)
 
-    cinder_snapshooter.snapshot_creator.create_snapshot_if_needed(
+    return_value = cinder_snapshooter.snapshot_creator.create_snapshot_if_needed(
         volume, os_client, all_projects, dry_run
     )
     os_client.block_storage.snapshots.assert_called_once_with(
@@ -207,9 +214,11 @@ def test_create_snapshot_if_needed(
         volume_id=volume.id,
     )
     if dry_run or last_snapshot == "in_day":
+        assert return_value == []
         os_client.block_storage.create_snapshot.assert_not_called()
         return
 
+    assert return_value == [os_client.block_storage.create_snapshot.return_value]
     if last_snapshot == "in_month":
         expire_at = now + relativedelta(days=+7)
     else:

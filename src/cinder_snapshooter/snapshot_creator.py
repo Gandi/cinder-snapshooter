@@ -48,6 +48,7 @@ def create_snapshot_if_needed(
     )
     is_monthly = True
     now = datetime.datetime.now(datetime.timezone.utc)
+    created_snapshots = []
     for snapshot in volume_snapshots:
         log.debug(
             "Looking at snapshot",
@@ -70,7 +71,7 @@ def create_snapshot_if_needed(
                 volume=volume.id,
                 snapshot=snapshot.id,
             )
-            return 0
+            return created_snapshots
 
     if is_monthly:
         expiry_date = now + relativedelta(months=+3)
@@ -85,6 +86,7 @@ def create_snapshot_if_needed(
             is_forced=True,  # create snapshot even if volume is attached
             metadata={"expire_at": expiry_date.date().isoformat()},
         )
+        created_snapshots.append(snapshot)
         log.info(
             "Created snapshot",
             volume=volume.id,
@@ -92,8 +94,7 @@ def create_snapshot_if_needed(
             expire_at=expiry_date.date().isoformat(),
             monthly=is_monthly,
         )
-        return 1
-    return 0
+    return created_snapshots
 
 
 def process_volumes(os_client, dry_run, all_projects):
@@ -109,11 +110,13 @@ def process_volumes(os_client, dry_run, all_projects):
         log.debug("Processing volume", volume=volume.id)
         if str2bool(volume.metadata.get("automatic_snapshots", "false")):
             try:
-                snapshot_created += create_snapshot_if_needed(
-                    volume,
-                    os_client,
-                    all_projects,
-                    dry_run,
+                snapshot_created += len(
+                    create_snapshot_if_needed(
+                        volume,
+                        os_client,
+                        all_projects,
+                        dry_run,
+                    )
                 )
             except Exception:
                 log.exception("Unable to create snapshot", volume=volume.id)
