@@ -1,4 +1,4 @@
-[![CI](https://github.com/diconico07/cinder-snapshooter/actions/workflows/CI.yml/badge.svg?event=push)](https://github.com/diconico07/cinder-snapshooter/actions/workflows/CI.yml)
+[![CI](https://github.com/Gandi/cinder-snapshooter/actions/workflows/CI.yml/badge.svg?event=push)](https://github.com/Gandi/cinder-snapshooter/actions/workflows/CI.yml)
 # Cinder-snapshooter
 This is a collection of scripts to allow automatic snapshot creation on Openstack Cinder Volumes
 
@@ -44,7 +44,7 @@ This project comes with a `Dockerfile` to generate a docker image.
 
 You can use it this way (here with snapshot creator):
 ```sh
-docker run --mount type=bind,src=$HOME/.config/openstack,dst=/root/.config/openstack -e OS_CLOUD=gandi ghcr.io/diconico07/cinder-snapshooter:latest creator
+docker run --mount type=bind,src=$HOME/.config/openstack,dst=/root/.config/openstack -e OS_CLOUD=gandi ghcr.io/Gandi/cinder-snapshooter:latest creator
 ```
 
 ### Run automatically using systemd timers
