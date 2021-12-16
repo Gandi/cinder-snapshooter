@@ -2,6 +2,28 @@
 # Cinder-snapshooter
 This is a collection of scripts to allow automatic snapshot creation on Openstack Cinder Volumes
 
+## Snapshots policy
+If you run the creator script at least every day, it shall create a snapshot per day for every volume with automatic
+snapshots enabled.
+
+These snapshots will expire after 7 days, except for the first snapshot of the month that will expire after 3 months.
+
+This let you with a maximum of 11 automatic snapshots for any given volume (4 "monthly" and 7 "daily"). Let see it with
+an example:
+
+I activate automatic snapshots on a volume on 15 January. On 8 April I will have the following snapshots:
+ - 15 January, expire on 15 April
+ - 1st February, expire on 1st May
+ - 1st March, expire on 1st June
+ - 1st April, expire on 1st July
+ - 2 April, expire on 9 April
+ - 3 April, expire on 10 April
+ - 4 April, expire on 11 April
+ - 5 April, expire on 12 April
+ - 6 April, expire on 13 April
+ - 7 April, expire on 14 April
+ - 8 April, expire on 15 April
+
 ## Usage
 This project comes with one command `cinder-snapshooter` with the following subcommands:
  
