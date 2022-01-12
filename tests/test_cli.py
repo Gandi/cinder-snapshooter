@@ -26,7 +26,6 @@ import cinder_snapshooter.snapshot_destroyer
             argparse.Namespace(
                 os_cloud="hello",
                 devel=True,
-                all_projects=False,
                 dry_run=False,
                 verbose=3,
                 func=cinder_snapshooter.snapshot_destroyer.cli,

@@ -17,26 +17,22 @@ limitations under the License.
 SPDX-License-Identifier: Apache-2.0
 """
 import datetime
-import os
 import sys
 
 import structlog
 
-from .utils import str2bool
+from .utils import run_on_all_projects
 
 
 log = structlog.get_logger()
 cmd_help = "Destroys expired snapshots"
 
 
-def process_snapshots(os_client, dry_run, all_projects):
+def process_snapshots(os_client, dry_run):
     """Delete every expired snapshot"""
-    all_projects = True if all_projects else None
     destroyed_snapshot = 0
     errors = 0
-    for snapshot in os_client.block_storage.snapshots(
-        all_projects=all_projects, status="available"
-    ):
+    for snapshot in os_client.block_storage.snapshots(status="available"):
         try:
             log.debug("Looking at snapshot", snapshot=snapshot.id)
             if "expire_at" not in snapshot.metadata:
@@ -71,7 +67,10 @@ def process_snapshots(os_client, dry_run, all_projects):
             log.exception("Failed destroying snapshot", snapshot=snapshot.id)
             errors += 1
     log.info(
-        "Processed all snapshots", destroyed_snapshot=destroyed_snapshot, errors=errors
+        "Processed all snapshots in project",
+        destroyed_snapshot=destroyed_snapshot,
+        errors=errors,
+        project=os_client.current_project_id,
     )
     return errors == 0
 
@@ -84,18 +83,10 @@ def register_args(parser):
         action="store_true",
         help="Do not create any snapshot, only pretend to",
     )
-    parser.add_argument(
-        "-a",
-        "--all-projects",
-        help="Run on all projects",
-        action="store_true",
-        default=str2bool(os.environ.get("ALL_PROJECTS", "false")),
-    )
 
 
 def cli(args):
     """Entrypoint for CLI subcommand"""
 
-    if process_snapshots(args.os_client, args.dry_run, args.all_projects):
-        return
-    sys.exit(1)  # Something went wrong during execution exit with 1
+    if not all(run_on_all_projects(args.os_client, process_snapshots, args.dry_run)):
+        sys.exit(1)  # Something went wrong during execution exit with 1
