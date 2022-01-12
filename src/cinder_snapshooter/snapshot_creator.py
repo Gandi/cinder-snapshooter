@@ -23,7 +23,7 @@ import structlog
 
 from dateutil.relativedelta import relativedelta
 
-from .utils import str2bool
+from .utils import run_on_all_projects, str2bool
 
 
 log = structlog.get_logger()
@@ -98,8 +98,7 @@ def process_volumes(os_client, dry_run):
     """Process all volumes searching for the ones with automatic snapshots"""
     snapshot_created = 0
     errors = 0
-    for volume in os_client.block_storage.volumes(
-    ):
+    for volume in os_client.block_storage.volumes():
         if volume.status not in ["available", "in-use"]:
             continue
         log.debug("Processing volume", volume=volume.id)
@@ -115,7 +114,12 @@ def process_volumes(os_client, dry_run):
             except Exception:
                 log.exception("Unable to create snapshot", volume=volume.id)
                 errors += 1
-    log.info("All volumes processed", snapshot_created=snapshot_created, errors=errors)
+    log.info(
+        "All volumes processed for project",
+        project=os_client.current_project_id,
+        snapshot_created=snapshot_created,
+        errors=errors,
+    )
     return errors == 0
 
 
@@ -131,7 +135,5 @@ def register_args(parser):
 
 def cli(args):
     """Entrypoint for CLI subcommand"""
-
-    if process_volumes(args.os_client, args.dry_run):
-        return
-    sys.exit(1)  # Something went wrong during execution exit with 1
+    if not all(run_on_all_projects(args.os_client, process_volumes, args.dry_run)):
+        sys.exit(1)  # Something went wrong during execution exit with 1

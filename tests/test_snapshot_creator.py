@@ -30,16 +30,23 @@ from fixtures import FakeSnapshot, FakeVolume
 
 @pytest.mark.parametrize("success", [True, False])
 def test_cli(mocker, faker, success):
-    mocker.patch("cinder_snapshooter.snapshot_creator.process_volumes")
     mocker.patch("sys.exit")
-    cinder_snapshooter.snapshot_creator.process_volumes.return_value = success
+    mocker.patch("cinder_snapshooter.snapshot_creator.run_on_all_projects")
+    cinder_snapshooter.snapshot_creator.run_on_all_projects.return_value = [
+        True,
+        True,
+        success,
+    ]
     fake_args = argparse.Namespace(
         dry_run=faker.boolean(),
         os_client=mocker.MagicMock(),
     )
+
     cinder_snapshooter.snapshot_creator.cli(fake_args)
-    cinder_snapshooter.snapshot_creator.process_volumes.assert_called_once_with(
+
+    cinder_snapshooter.snapshot_creator.run_on_all_projects.assert_called_once_with(
         fake_args.os_client,
+        cinder_snapshooter.snapshot_creator.process_volumes,
         fake_args.dry_run,
     )
     if not success:
@@ -96,9 +103,7 @@ def test_process_volumes(mocker, faker, log, dry_run, success):
     )
 
     assert (
-        cinder_snapshooter.snapshot_creator.process_volumes(
-            os_client, dry_run
-        )
+        cinder_snapshooter.snapshot_creator.process_volumes(os_client, dry_run)
         == success
     )
     assert (
@@ -114,9 +119,10 @@ def test_process_volumes(mocker, faker, log, dry_run, success):
 
     os_client.block_storage.volumes.assert_called_once_with()
     assert log.has(
-        "All volumes processed",
+        "All volumes processed for project",
         errors=len(nok_volumes),
         snapshot_created=len(ok_volumes) - len(nok_volumes),
+        project=os_client.current_project_id,
     )
 
 
@@ -124,9 +130,7 @@ def test_process_volumes(mocker, faker, log, dry_run, success):
 @pytest.mark.parametrize(
     "last_snapshot", ["never", "last_year", "in_year", "in_month", "in_day"]
 )
-def test_create_snapshot_if_needed(
-    mocker, faker, time_machine, dry_run, last_snapshot
-):
+def test_create_snapshot_if_needed(mocker, faker, time_machine, dry_run, last_snapshot):
     volume = FakeVolume(
         id=faker.uuid4(), status="available", metadata={"automatic_snapshots": "true"}
     )
