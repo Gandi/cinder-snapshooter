@@ -30,30 +30,32 @@ from fixtures import FakeSnapshot, FakeVolume
 
 @pytest.mark.parametrize("success", [True, False])
 def test_cli(mocker, faker, success):
-    mocker.patch("cinder_snapshooter.snapshot_creator.process_volumes")
     mocker.patch("sys.exit")
-    cinder_snapshooter.snapshot_creator.process_volumes.return_value = success
+    mocker.patch("cinder_snapshooter.snapshot_creator.run_on_all_projects")
+    cinder_snapshooter.snapshot_creator.run_on_all_projects.return_value = [
+        True,
+        True,
+        success,
+    ]
     fake_args = argparse.Namespace(
         dry_run=faker.boolean(),
-        all_projects=faker.boolean(),
         os_client=mocker.MagicMock(),
     )
+
     cinder_snapshooter.snapshot_creator.cli(fake_args)
-    cinder_snapshooter.snapshot_creator.process_volumes.assert_called_once_with(
+
+    cinder_snapshooter.snapshot_creator.run_on_all_projects.assert_called_once_with(
         fake_args.os_client,
+        cinder_snapshooter.snapshot_creator.process_volumes,
         fake_args.dry_run,
-        fake_args.all_projects,
     )
     if not success:
         sys.exit.assert_called_once_with(1)
 
 
-@pytest.mark.parametrize(
-    "all_projects", [True, False], ids=["single_project", "all_projects"]
-)
 @pytest.mark.parametrize("dry_run", [True, False], ids=["dry_run", "real_run"])
 @pytest.mark.parametrize("success", [True, False])
-def test_process_volumes(mocker, faker, log, all_projects, dry_run, success):
+def test_process_volumes(mocker, faker, log, dry_run, success):
     os_client = mocker.MagicMock()
     mocker.patch("cinder_snapshooter.snapshot_creator.create_snapshot_if_needed")
 
@@ -90,7 +92,7 @@ def test_process_volumes(mocker, faker, log, all_projects, dry_run, success):
     ok_volumes += nok_volumes
     volumes += ok_volumes
 
-    def create_snapshot_if_needed(ivolume, _client, _all_projects, _dry_run):
+    def create_snapshot_if_needed(ivolume, _client, _dry_run):
         if ivolume in nok_volumes:
             raise Exception()
         return ["a snapshot"]
@@ -101,14 +103,9 @@ def test_process_volumes(mocker, faker, log, all_projects, dry_run, success):
     )
 
     assert (
-        cinder_snapshooter.snapshot_creator.process_volumes(
-            os_client, dry_run, all_projects
-        )
+        cinder_snapshooter.snapshot_creator.process_volumes(os_client, dry_run)
         == success
     )
-    if not all_projects:
-        all_projects = None
-
     assert (
         cinder_snapshooter.snapshot_creator.create_snapshot_if_needed.call_count
         == len(ok_volumes)
@@ -117,28 +114,23 @@ def test_process_volumes(mocker, faker, log, all_projects, dry_run, success):
         cinder_snapshooter.snapshot_creator.create_snapshot_if_needed.assert_any_call(
             volume,
             os_client,
-            all_projects,
             dry_run,
         )
 
-    os_client.block_storage.volumes.assert_called_once_with(all_projects=all_projects)
+    os_client.block_storage.volumes.assert_called_once_with()
     assert log.has(
-        "All volumes processed",
+        "All volumes processed for project",
         errors=len(nok_volumes),
         snapshot_created=len(ok_volumes) - len(nok_volumes),
+        project=os_client.current_project_id,
     )
 
 
-@pytest.mark.parametrize(
-    "all_projects", [None, True], ids=["single_project", "all_projects"]
-)
 @pytest.mark.parametrize("dry_run", [False, True], ids=["real_run", "dry_run"])
 @pytest.mark.parametrize(
     "last_snapshot", ["never", "last_year", "in_year", "in_month", "in_day"]
 )
-def test_create_snapshot_if_needed(
-    mocker, faker, time_machine, all_projects, dry_run, last_snapshot
-):
+def test_create_snapshot_if_needed(mocker, faker, time_machine, dry_run, last_snapshot):
     volume = FakeVolume(
         id=faker.uuid4(), status="available", metadata={"automatic_snapshots": "true"}
     )
@@ -206,10 +198,9 @@ def test_create_snapshot_if_needed(
     time_machine.move_to(now)
 
     return_value = cinder_snapshooter.snapshot_creator.create_snapshot_if_needed(
-        volume, os_client, all_projects, dry_run
+        volume, os_client, dry_run
     )
     os_client.block_storage.snapshots.assert_called_once_with(
-        all_projects=all_projects,
         status="available",
         volume_id=volume.id,
     )

@@ -18,7 +18,47 @@ SPDX-License-Identifier: Apache-2.0
 """
 import logging
 
+import keystoneauth1.exceptions
 import structlog
+
+
+log = structlog.get_logger()
+
+
+def run_on_all_projects(os_client, process_function, *args, **kwargs):
+    return_value = []
+    for trust_id, project_id in available_projects(os_client):
+        log.debug("Processing project", project=project_id, trust=trust_id)
+        if trust_id is None:
+            os_project_client = os_client.connect_as(project_id=project_id)
+        else:
+            os_project_client = os_client.connect_as(
+                trust_id=trust_id,
+            )
+        try:
+            return_value.append(process_function(os_project_client, *args, **kwargs))
+        except keystoneauth1.exceptions.HTTPClientError as e:
+            if e.http_status == 403:
+                log.warning(
+                    "No effective rights on project",
+                    project=project_id,
+                    req=e.request_id,
+                    trust=trust_id,
+                )
+            else:
+                raise
+    return return_value
+
+
+def available_projects(os_client):
+    """List all projects we can operate on"""
+
+    for trust in os_client.identity.trusts(trustee_user_id=os_client.current_user_id):
+        yield trust.id, trust.project_id
+    for project in os_client.identity.user_projects(
+        os_client.current_user_id, enabled=True
+    ):
+        yield None, project.id
 
 
 def setup_logging(args):

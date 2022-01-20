@@ -28,32 +28,30 @@ from fixtures import FakeSnapshot
 
 @pytest.mark.parametrize("success", [True, False])
 def test_cli(mocker, faker, success):
-    mocker.patch("cinder_snapshooter.snapshot_destroyer.process_snapshots")
+    mocker.patch("cinder_snapshooter.snapshot_destroyer.run_on_all_projects")
     mocker.patch("sys.exit")
-    cinder_snapshooter.snapshot_destroyer.process_snapshots.return_value = success
+    cinder_snapshooter.snapshot_destroyer.run_on_all_projects.return_value = [
+        True,
+        True,
+        success,
+    ]
     fake_args = argparse.Namespace(
         dry_run=faker.boolean(),
-        all_projects=faker.boolean(),
         os_client=mocker.MagicMock(),
     )
     cinder_snapshooter.snapshot_destroyer.cli(fake_args)
-    cinder_snapshooter.snapshot_destroyer.process_snapshots.assert_called_once_with(
+    cinder_snapshooter.snapshot_destroyer.run_on_all_projects.assert_called_once_with(
         fake_args.os_client,
+        cinder_snapshooter.snapshot_destroyer.process_snapshots,
         fake_args.dry_run,
-        fake_args.all_projects,
     )
     if not success:
         sys.exit.assert_called_once_with(1)
 
 
 @pytest.mark.parametrize("dry_run", [True, False], ids=["dry-run", "real-run"])
-@pytest.mark.parametrize(
-    "all_projects", [True, False], ids=["all-projects", "single-project"]
-)
 @pytest.mark.parametrize("success", [True, False])
-def test_process_snapshots(
-    mocker, faker, log, time_machine, dry_run, all_projects, success
-):
+def test_process_snapshots(mocker, faker, log, time_machine, dry_run, success):
     os_client = mocker.MagicMock()
     manual_snapshots = [
         FakeSnapshot(
@@ -124,18 +122,12 @@ def test_process_snapshots(
     os_client.block_storage.delete_snapshot.side_effect = delete_snapshot
 
     assert (
-        cinder_snapshooter.snapshot_destroyer.process_snapshots(
-            os_client, dry_run, all_projects
-        )
+        cinder_snapshooter.snapshot_destroyer.process_snapshots(os_client, dry_run)
         == success
         or dry_run
     )
-    if not all_projects:
-        all_projects = None
 
-    os_client.block_storage.snapshots.assert_called_once_with(
-        all_projects=all_projects, status="available"
-    )
+    os_client.block_storage.snapshots.assert_called_once_with(status="available")
     if dry_run:
         os_client.block_storage.delete_snapshot.assert_not_called()
         return
@@ -146,7 +138,8 @@ def test_process_snapshots(
     for snapshot in expired_snapshot + nok_snapshot:
         os_client.block_storage.delete_snapshot.assert_any_call(snapshot)
     assert log.has(
-        "Processed all snapshots",
+        "Processed all snapshots in project",
         destroyed_snapshot=len(expired_snapshot),
         errors=len(nok_snapshot),
+        project=os_client.current_project_id,
     )

@@ -30,13 +30,20 @@ This project comes with one command `cinder-snapshooter` with the following subc
  * `creator`: Creates automatic snapshots on volumes needing one
  * `destroyer`: Destroys expired snapshots
  
-Both commands have a `dry-run` and `all-projects` flag to control the behavior, refer
+Both commands have a `dry-run` flag to control the behavior, refer
 to the commands `--help` for more details.
 
 To enroll a volume to automatic snapshot creation it must have the `automatic_snapshots` property set to `true`,
 you can do so using the following openstack command:
 ```commandline
 openstack volume set --property automatic_snapshots=true "<volume_id>"
+```
+
+If the user doing the snapshot creation has no rights on your project you can issue a trust to give them the right
+to create the snapshots (please be mindful it may give this user a lot more permissions on your project, be sure you
+trust that user):
+```sh
+openstack trust create --role member --project "<project_id>" "<your_user_id>" "<trusted_user_id>"
 ```
 
 ### Use the docker image
@@ -84,7 +91,6 @@ User=cinder-snapshooter
 Some configuration options are available using environment variables for ease of use:
 
  * OS_CLOUD: Name of the cloud to use in your clouds.yml file
- * ALL_PROJECTS: Whether to work on all projects or not (requires a user with the appropriate rights, usually admin)
  
 
 ## Run tests

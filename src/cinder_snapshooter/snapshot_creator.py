@@ -17,14 +17,13 @@ limitations under the License.
 SPDX-License-Identifier: Apache-2.0
 """
 import datetime
-import os
 import sys
 
 import structlog
 
 from dateutil.relativedelta import relativedelta
 
-from .utils import str2bool
+from .utils import run_on_all_projects, str2bool
 
 
 log = structlog.get_logger()
@@ -34,7 +33,6 @@ cmd_help = "Creates automatic snapshots"
 def create_snapshot_if_needed(
     volume,
     os_client,
-    all_projects,
     dry_run,
 ):
     """Create a snapshot if there isn't one for this volume today
@@ -42,7 +40,6 @@ def create_snapshot_if_needed(
     will expire in 3 months
     """
     volume_snapshots = os_client.block_storage.snapshots(
-        all_projects=all_projects,
         status="available",
         volume_id=volume.id,
     )
@@ -97,14 +94,11 @@ def create_snapshot_if_needed(
     return created_snapshots
 
 
-def process_volumes(os_client, dry_run, all_projects):
+def process_volumes(os_client, dry_run):
     """Process all volumes searching for the ones with automatic snapshots"""
-    all_projects = True if all_projects else None
     snapshot_created = 0
     errors = 0
-    for volume in os_client.block_storage.volumes(
-        all_projects=all_projects,
-    ):
+    for volume in os_client.block_storage.volumes():
         if volume.status not in ["available", "in-use"]:
             continue
         log.debug("Processing volume", volume=volume.id)
@@ -114,14 +108,18 @@ def process_volumes(os_client, dry_run, all_projects):
                     create_snapshot_if_needed(
                         volume,
                         os_client,
-                        all_projects,
                         dry_run,
                     )
                 )
             except Exception:
                 log.exception("Unable to create snapshot", volume=volume.id)
                 errors += 1
-    log.info("All volumes processed", snapshot_created=snapshot_created, errors=errors)
+    log.info(
+        "All volumes processed for project",
+        project=os_client.current_project_id,
+        snapshot_created=snapshot_created,
+        errors=errors,
+    )
     return errors == 0
 
 
@@ -133,18 +131,9 @@ def register_args(parser):
         action="store_true",
         help="Do not create any snapshot, only pretend to",
     )
-    parser.add_argument(
-        "-a",
-        "--all-projects",
-        help="Run on all projects",
-        action="store_true",
-        default=str2bool(os.environ.get("ALL_PROJECTS", "false")),
-    )
 
 
 def cli(args):
     """Entrypoint for CLI subcommand"""
-
-    if process_volumes(args.os_client, args.dry_run, args.all_projects):
-        return
-    sys.exit(1)  # Something went wrong during execution exit with 1
+    if not all(run_on_all_projects(args.os_client, process_volumes, args.dry_run)):
+        sys.exit(1)  # Something went wrong during execution exit with 1

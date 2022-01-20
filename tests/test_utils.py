@@ -18,10 +18,12 @@ SPDX-License-Identifier: Apache-2.0
 import argparse
 import logging
 
+import keystoneauth1.exceptions
 import pytest
 import structlog.stdlib
 
 import cinder_snapshooter.utils
+import fixtures
 
 
 @pytest.mark.parametrize(
@@ -85,3 +87,106 @@ def test_setup_logging(mocker, faker, devel, verbose):
         assert loggers[logger].setLevel.call_args == mocker.call(logging.INFO)
     for logger in debug_loggers:
         assert loggers[logger].setLevel.call_args == mocker.call(logging.DEBUG)
+
+
+def test_available_projects(mocker, faker):
+    os_client = mocker.MagicMock()
+    trusts = [fixtures.FakeTrust(id=faker.uuid4(), project_id=faker.uuid4())]
+    projects = [fixtures.FakeProject(id=faker.uuid4(), name=faker.domain_name())]
+    os_client.identity.trusts.return_value = trusts
+    os_client.identity.user_projects.return_value = projects
+    assert list(cinder_snapshooter.utils.available_projects(os_client)) == [
+        (trust.id, trust.project_id) for trust in trusts
+    ] + [(None, project.id) for project in projects]
+
+
+def test_run_on_all_projects(mocker, faker, log):
+    mocker.patch("cinder_snapshooter.utils.available_projects")
+    projects = [
+        (None, faker.uuid4()),
+        (faker.uuid4(), faker.uuid4()),
+    ]
+    cinder_snapshooter.utils.available_projects.return_value = projects
+
+    def connect_as(**kwargs):
+        return kwargs
+
+    os_client = mocker.MagicMock()
+    os_client.connect_as.side_effect = connect_as
+
+    process_function = mocker.MagicMock()
+    process_function_args = (("yet another argument",), {"some_kwargs": True})
+    process_function_rv = [faker.boolean() for _ in projects]
+    process_function.side_effect = process_function_rv
+
+    rv = cinder_snapshooter.utils.run_on_all_projects(
+        os_client,
+        process_function,
+        *process_function_args[0],
+        **process_function_args[1],
+    )
+
+    assert rv == process_function_rv
+    assert os_client.connect_as.call_args_list == [
+        mocker.call(project_id=projects[0][1]),
+        mocker.call(trust_id=projects[1][0]),
+    ]
+    assert process_function.call_args_list == [
+        mocker.call(
+            {"project_id": projects[0][1]},
+            *process_function_args[0],
+            **process_function_args[1],
+        ),
+        mocker.call(
+            {"trust_id": projects[1][0]},
+            *process_function_args[0],
+            **process_function_args[1],
+        ),
+    ]
+
+
+@pytest.mark.parametrize("return_code", [401, 403])
+def test_run_on_all_project_raising(mocker, faker, log, return_code):
+    mocker.patch("cinder_snapshooter.utils.available_projects")
+
+    projects = [
+        (None, faker.uuid4()),
+        (faker.uuid4(), faker.uuid4()),
+    ]
+    cinder_snapshooter.utils.available_projects.return_value = projects
+
+    def connect_as(**kwargs):
+        return kwargs
+
+    os_client = mocker.MagicMock()
+    os_client.connect_as.side_effect = connect_as
+
+    process_function = mocker.MagicMock()
+    process_function.side_effect = keystoneauth1.exceptions.HTTPClientError(
+        http_status=return_code,
+    )
+
+    if return_code == 403:
+        rv = cinder_snapshooter.utils.run_on_all_projects(
+            os_client,
+            process_function,
+        )
+        assert rv == []
+        assert os_client.connect_as.call_args_list == [
+            mocker.call(project_id=projects[0][1]),
+            mocker.call(trust_id=projects[1][0]),
+        ]
+        assert process_function.call_args_list == [
+            mocker.call(
+                {"project_id": projects[0][1]},
+            ),
+            mocker.call(
+                {"trust_id": projects[1][0]},
+            ),
+        ]
+    else:
+        with pytest.raises(keystoneauth1.exceptions.HTTPClientError):
+            cinder_snapshooter.utils.run_on_all_projects(
+                os_client,
+                process_function,
+            )

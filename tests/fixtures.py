@@ -32,3 +32,15 @@ class FakeSnapshot:
     metadata: dict
     volume_id: str
     created_at: str
+
+
+@dataclass
+class FakeProject:
+    id: str
+    name: str
+
+
+@dataclass
+class FakeTrust:
+    id: str
+    project_id: str
