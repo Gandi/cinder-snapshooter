@@ -18,6 +18,7 @@ SPDX-License-Identifier: Apache-2.0
 """
 import logging
 
+import eventlet
 import keystoneauth1.exceptions
 import structlog
 
@@ -25,8 +26,9 @@ import structlog
 log = structlog.get_logger()
 
 
-def run_on_all_projects(os_client, process_function, *args, **kwargs):
-    return_value = []
+def run_on_all_projects(os_client, process_function, pool_size, *args, **kwargs):
+    pool = eventlet.GreenPool(size=pool_size)
+    greenlets = []
     for trust_id, project_id in available_projects(os_client):
         log.debug("Processing project", project=project_id, trust=trust_id)
         if trust_id is None:
@@ -35,18 +37,31 @@ def run_on_all_projects(os_client, process_function, *args, **kwargs):
             os_project_client = os_client.connect_as(
                 trust_id=trust_id,
             )
+        greenlets.append(
+            {
+                "project_id": project_id,
+                "trust_id": trust_id,
+                "result": pool.spawn(
+                    process_function, os_project_client, *args, **kwargs
+                ),
+            }
+        )
+
+    return_value = []
+    for g in greenlets:
         try:
-            return_value.append(process_function(os_project_client, *args, **kwargs))
+            return_value.append(g["result"].wait())
         except keystoneauth1.exceptions.HTTPClientError as e:
             if e.http_status == 403:
-                log.warning(
+                log.error(
                     "No effective rights on project",
-                    project=project_id,
+                    project=g["project_id"],
                     req=e.request_id,
-                    trust=trust_id,
+                    trust=g["trust_id"],
                 )
             else:
                 raise
+
     return return_value
 
 

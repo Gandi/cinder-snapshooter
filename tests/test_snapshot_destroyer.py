@@ -38,11 +38,13 @@ def test_cli(mocker, faker, success):
     fake_args = argparse.Namespace(
         dry_run=faker.boolean(),
         os_client=mocker.MagicMock(),
+        pool_size=10,
     )
     cinder_snapshooter.snapshot_destroyer.cli(fake_args)
     cinder_snapshooter.snapshot_destroyer.run_on_all_projects.assert_called_once_with(
         fake_args.os_client,
         cinder_snapshooter.snapshot_destroyer.process_snapshots,
+        fake_args.pool_size,
         fake_args.dry_run,
     )
     if not success:

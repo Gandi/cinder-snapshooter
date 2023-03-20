@@ -88,5 +88,9 @@ def register_args(parser):
 def cli(args):
     """Entrypoint for CLI subcommand"""
 
-    if not all(run_on_all_projects(args.os_client, process_snapshots, args.dry_run)):
+    if not all(
+        run_on_all_projects(
+            args.os_client, process_snapshots, args.pool_size, args.dry_run
+        )
+    ):
         sys.exit(1)  # Something went wrong during execution exit with 1
