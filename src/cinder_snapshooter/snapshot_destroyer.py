@@ -21,6 +21,9 @@ import sys
 
 import structlog
 
+from openstack.exceptions import ResourceNotFound
+from tenacity import TryAgain, retry, stop_after_delay, wait_random
+
 from .utils import run_on_all_projects
 
 
@@ -51,12 +54,13 @@ def process_snapshots(os_client, dry_run):
                 )
                 if not dry_run:
                     os_client.block_storage.delete_snapshot(snapshot)
-                    log.info(
-                        "Deleted snapshot",
-                        snapshot=snapshot.id,
-                        expire_at=expire_at.isoformat(),
-                    )
-                    destroyed_snapshot += 1
+                    if wait_for_snapshot_deletion(os_client, snapshot.id):
+                        log.info(
+                            "Deleted snapshot",
+                            snapshot=snapshot.id,
+                            expire_at=expire_at.isoformat(),
+                        )
+                        destroyed_snapshot += 1
             else:
                 log.debug(
                     "Keeping snapshot, still valid",
@@ -64,7 +68,7 @@ def process_snapshots(os_client, dry_run):
                     expire_at=expire_at.isoformat(),
                 )
         except Exception:
-            log.exception("Failed destroying snapshot", snapshot=snapshot.id)
+            log.exception("Failed to delete snapshot", snapshot=snapshot.id)
             errors += 1
     log.info(
         "Processed all snapshots in project",
@@ -73,6 +77,18 @@ def process_snapshots(os_client, dry_run):
         project=os_client.current_project_id,
     )
     return errors == 0
+
+
+@retry(
+    wait=wait_random(min=1, max=2),
+    stop=stop_after_delay(30),
+)
+def wait_for_snapshot_deletion(os_client, snapshot_id: str):
+    try:
+        os_client.block_storage.get_snapshot(snapshot_id)
+    except ResourceNotFound:
+        return True
+    raise TryAgain
 
 
 def register_args(parser):

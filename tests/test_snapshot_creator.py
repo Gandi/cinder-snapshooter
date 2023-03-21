@@ -23,8 +23,8 @@ import pytest
 
 from dateutil.relativedelta import relativedelta
 
-import cinder_snapshooter.snapshot_creator
 import cinder_snapshooter.exceptions
+import cinder_snapshooter.snapshot_creator
 
 from fixtures import FakeSnapshot, FakeVolume
 
