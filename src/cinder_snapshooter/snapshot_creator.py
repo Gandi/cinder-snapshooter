@@ -22,7 +22,16 @@ import sys
 import structlog
 
 from dateutil.relativedelta import relativedelta
+from openstack.block_storage.v3.snapshot import Snapshot
+from tenacity import (
+    TryAgain,
+    retry,
+    retry_if_not_exception_type,
+    stop_after_delay,
+    wait_random,
+)
 
+from .exceptions import SnapshotInError
 from .utils import run_on_all_projects, str2bool
 
 
@@ -83,7 +92,6 @@ def create_snapshot_if_needed(
             is_forced=True,  # create snapshot even if volume is attached
             metadata={"expire_at": expiry_date.date().isoformat()},
         )
-        created_snapshots.append(snapshot)
         log.info(
             "Created snapshot",
             volume=volume.id,
@@ -91,7 +99,29 @@ def create_snapshot_if_needed(
             expire_at=expiry_date.date().isoformat(),
             monthly=is_monthly,
         )
+
+        created_snapshots.append(wait_for_snapshot_creation(os_client, snapshot))
+
     return created_snapshots
+
+
+@retry(
+    wait=wait_random(min=1, max=2),
+    stop=stop_after_delay(30),
+    retry=retry_if_not_exception_type(SnapshotInError),
+)
+def wait_for_snapshot_creation(os_client, snapshot: Snapshot):
+    snapshot = os_client.block_storage.get_snapshot(snapshot.id)
+    if snapshot.status == "available":
+        log.info(
+            "Created snapshot",
+            volume=snapshot.volume_id,
+            snapshot=snapshot.id,
+        )
+        return snapshot
+    elif snapshot.status == "error":
+        raise SnapshotInError(snapshot)
+    raise TryAgain
 
 
 def process_volumes(os_client, dry_run):
@@ -111,6 +141,13 @@ def process_volumes(os_client, dry_run):
                         dry_run,
                     )
                 )
+            except SnapshotInError as err:
+                log.error(
+                    "Created snapshot in error",
+                    volume=err.volume_id,
+                    snapshot=err.snapshot_id,
+                )
+                errors += 1
             except Exception:
                 log.exception("Unable to create snapshot", volume=volume.id)
                 errors += 1
