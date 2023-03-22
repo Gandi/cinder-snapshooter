@@ -16,29 +16,80 @@ limitations under the License.
 
 SPDX-License-Identifier: Apache-2.0
 """
+import datetime
 import logging
+
+from typing import Optional
 
 import eventlet
 import keystoneauth1.exceptions
 import structlog
-from typing import Optional
 
+from openstack.block_storage.v3.snapshot import Snapshot
+from openstack.block_storage.v3.volume import Volume
 from openstack.connection import Connection
 from openstack.exceptions import ResourceNotFound
-from openstack.block_storage.v3.snapshot import Snapshot
 from tenacity import (
     Retrying,
+    TryAgain,
+    retry_if_not_exception_type,
     stop_after_attempt,
     stop_after_delay,
     wait_random,
 )
 
-from .exceptions import SnapshotStillPresent
+from .exceptions import SnapshotInError, SnapshotStillPresent
 
 
 log = structlog.get_logger()
 
 DEFAULT_DELETE_RETRIES = 3
+DEFAULT_CREATE_RETRIES = 3
+
+
+def create_snapshot(
+    os_client: Connection,
+    volume: Volume,
+    expiry_date: datetime.datetime,
+    timeout: int,
+    retries: Optional[int] = DEFAULT_CREATE_RETRIES,
+):
+    for attempt in Retrying(
+        wait=wait_random(min=1, max=3), stop=stop_after_attempt(retries)
+    ):
+        with attempt:
+            snapshot = os_client.block_storage.create_snapshot(
+                volume_id=volume.id,
+                description="Automatic daily snapshot",
+                is_forced=True,  # create snapshot even if volume is attached
+                metadata={"expire_at": expiry_date.date().isoformat()},
+            )
+
+    for attempt in Retrying(
+        wait=wait_random(min=1, max=3),
+        stop=stop_after_delay(timeout),
+        retry=retry_if_not_exception_type(SnapshotInError),
+    ):
+        with attempt:
+            snapshot = os_client.block_storage.get_snapshot(snapshot.id)
+            if snapshot.status == "available":
+                log.info(
+                    "Created snapshot",
+                    volume=volume.id,
+                    snapshot=snapshot.id,
+                    project=os_client.current_project_id,
+                    expire_at=expiry_date.date().isoformat(),
+                )
+                return snapshot
+            elif snapshot.status == "error":
+                raise SnapshotInError(snapshot)
+            log.debug(
+                "Snapshot not done yet, waiting...",
+                project_id=os_client.current_project_id,
+                snapshot_id=snapshot.id,
+                status=snapshot.status,
+            )
+            raise TryAgain
 
 
 def delete_snapshot(

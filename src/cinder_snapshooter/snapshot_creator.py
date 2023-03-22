@@ -22,24 +22,12 @@ import sys
 import structlog
 
 from dateutil.relativedelta import relativedelta
-from openstack.block_storage.v3.snapshot import Snapshot
 from openstack.block_storage.v3.volume import Volume
 from openstack.connection import Connection
 from openstack.exceptions import HttpException
-from tenacity import (
-    Retrying,
-    TryAgain,
-    retry_if_not_exception_type,
-    stop_after_delay,
-    wait_random,
-)
 
 from .exceptions import SnapshotInError
-from .utils import (
-    run_on_all_projects,
-    str2bool,
-    delete_snapshot,
-)
+from .utils import create_snapshot, delete_snapshot, run_on_all_projects, str2bool
 
 
 log = structlog.get_logger()
@@ -96,45 +84,11 @@ def create_snapshot_if_needed(
 
     log.debug("Creating snapshot", volume=volume.id, monthly=is_monthly)
     if not dry_run:
-        snapshot = os_client.block_storage.create_snapshot(
-            volume_id=volume.id,
-            description="Automatic daily snapshot",
-            is_forced=True,  # create snapshot even if volume is attached
-            metadata={"expire_at": expiry_date.date().isoformat()},
+        created_snapshots.append(
+            create_snapshot(os_client, volume, expiry_date, wait_completion_timeout)
         )
 
-        for attempt in Retrying(
-            wait=wait_random(min=1, max=2),
-            stop=stop_after_delay(wait_completion_timeout),
-            retry=retry_if_not_exception_type(SnapshotInError),
-        ):
-            with attempt:
-                created_snapshots.append(check_snapshot_creation(os_client, snapshot))
-                log.info(
-                    "Created snapshot",
-                    volume=volume.id,
-                    snapshot=snapshot.id,
-                    project=os_client.current_project_id,
-                    expire_at=expiry_date.date().isoformat(),
-                    monthly=is_monthly,
-                )
-
     return created_snapshots
-
-
-def check_snapshot_creation(os_client, snapshot: Snapshot):
-    snapshot = os_client.block_storage.get_snapshot(snapshot.id)
-    if snapshot.status == "available":
-        return snapshot
-    elif snapshot.status == "error":
-        raise SnapshotInError(snapshot)
-    log.debug(
-        "Snapshot not done yet, waiting...",
-        project_id=os_client.current_project_id,
-        snapshot_id=snapshot.id,
-        status=snapshot.status,
-    )
-    raise TryAgain
 
 
 def process_volumes(os_client, wait_completion_timeout, dry_run):

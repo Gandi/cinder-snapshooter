@@ -21,7 +21,7 @@ import sys
 
 import structlog
 
-from .utils import run_on_all_projects, delete_snapshot
+from .utils import delete_snapshot, run_on_all_projects
 
 
 log = structlog.get_logger()
