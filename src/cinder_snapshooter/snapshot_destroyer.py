@@ -33,43 +33,65 @@ def process_snapshots(os_client, wait_completion_timeout, dry_run):
     destroyed_snapshot = 0
     errors = 0
     for snapshot in os_client.block_storage.snapshots(status="available"):
-        try:
+        log.debug(
+            "Looking at snapshot",
+            snapshot=snapshot.id,
+            project=os_client.current_project_id,
+        )
+        if "expire_at" not in snapshot.metadata:
+            continue
+        expire_at = datetime.datetime.combine(
+            date=datetime.date.fromisoformat(snapshot.metadata["expire_at"]),
+            time=datetime.time.min,
+            tzinfo=datetime.timezone.utc,
+        )
+        now = datetime.datetime.now(datetime.timezone.utc)
+        if now > expire_at:
             log.debug(
-                "Looking at snapshot",
+                "Deleting snapshot",
                 snapshot=snapshot.id,
                 project=os_client.current_project_id,
+                expire_at=expire_at.isoformat(),
             )
-            if "expire_at" not in snapshot.metadata:
-                continue
-            expire_at = datetime.datetime.combine(
-                date=datetime.date.fromisoformat(snapshot.metadata["expire_at"]),
-                time=datetime.time.min,
-                tzinfo=datetime.timezone.utc,
-            )
-            now = datetime.datetime.now(datetime.timezone.utc)
-            if now > expire_at:
-                log.debug(
-                    "Deleting snapshot",
-                    snapshot=snapshot.id,
-                    project=os_client.current_project_id,
-                    expire_at=expire_at.isoformat(),
-                )
-                if not dry_run:
+            if not dry_run:
+                try:
                     delete_snapshot(os_client, snapshot, wait_completion_timeout)
                     destroyed_snapshot += 1
-            else:
-                log.debug(
-                    "Keeping snapshot, still valid",
-                    snapshot=snapshot.id,
-                    expire_at=expire_at.isoformat(),
-                )
-        except Exception:
-            log.exception(
-                "Failed to delete snapshot",
-                project=os_client.current_project_id,
+                except Exception:
+                    log.exception(
+                        "Failed to delete snapshot",
+                        project=os_client.current_project_id,
+                        snapshot=snapshot.id,
+                    )
+                    errors += 1
+        else:
+            log.debug(
+                "Keeping snapshot, still valid",
                 snapshot=snapshot.id,
+                expire_at=expire_at.isoformat(),
             )
-            errors += 1
+
+    # Cleanup left-over snapshots in error
+    for snapshot in os_client.block_storage.snapshots(status="error"):
+        if "expire_at" not in snapshot.metadata:
+            continue
+        log.debug(
+            "Deleting snapshot in error",
+            snapshot=snapshot.id,
+            project=os_client.current_project_id,
+        )
+        if not dry_run:
+            try:
+                delete_snapshot(os_client, snapshot, wait_completion_timeout)
+                destroyed_snapshot += 1
+            except Exception:
+                log.exception(
+                    "Failed to delete snapshot in error",
+                    project=os_client.current_project_id,
+                    snapshot=snapshot.id,
+                )
+                errors += 1
+
     log.info(
         "Processed all snapshots in project",
         destroyed_snapshot=destroyed_snapshot,

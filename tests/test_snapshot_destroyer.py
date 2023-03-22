@@ -60,7 +60,7 @@ def test_cli(mocker, faker, success):
 @pytest.mark.parametrize("success", [True, False])
 def test_process_snapshots(mocker, faker, log, time_machine, dry_run, success):
     # No retries to speedup test
-    mocker.patch.object(utils.delete_snapshot, '__defaults__', (0,))
+    mocker.patch.object(utils.delete_snapshot, "__defaults__", (0,))
     os_client = mocker.MagicMock()
     manual_snapshots = [
         FakeSnapshot(
@@ -74,9 +74,34 @@ def test_process_snapshots(mocker, faker, log, time_machine, dry_run, success):
         )
         for i in range(10)
     ]
+    manual_errored_snapshots = [
+        FakeSnapshot(
+            id=faker.uuid4(),
+            status="error",
+            created_at=faker.date_time_this_century(
+                tzinfo=datetime.timezone.utc
+            ).isoformat(),
+            volume_id=faker.uuid4(),
+            metadata={},
+        )
+        for i in range(3)
+    ]
 
     now = faker.date_time_this_century(tzinfo=datetime.timezone.utc)
     time_machine.move_to(now)
+
+    errored_snapshots = [
+        FakeSnapshot(
+            id=faker.uuid4(),
+            status="error",
+            created_at=faker.date_time_this_century(
+                tzinfo=datetime.timezone.utc
+            ).isoformat(),
+            volume_id=faker.uuid4(),
+            metadata={"expire_at": faker.date(end_datetime=now)},
+        )
+        for i in range(5)
+    ]
     expired_snapshot = [
         FakeSnapshot(
             id=faker.uuid4(),
@@ -136,7 +161,12 @@ def test_process_snapshots(mocker, faker, log, time_machine, dry_run, success):
         + nok_snapshot_delete
         + nok_snapshot_is_deleted
     )
-    os_client.block_storage.snapshots.return_value = snapshots
+    snapshots_in_error = manual_errored_snapshots + errored_snapshots
+
+    os_client.block_storage.snapshots.side_effect = [
+        snapshots,
+        snapshots_in_error,
+    ]
 
     def delete_snapshot(isnapshot):
         if isnapshot in nok_snapshot_delete:
@@ -158,19 +188,27 @@ def test_process_snapshots(mocker, faker, log, time_machine, dry_run, success):
         or dry_run
     )
 
-    os_client.block_storage.snapshots.assert_called_once_with(status="available")
+    os_client.block_storage.snapshots.assert_has_calls(
+        [
+            mocker.call(status="available"),
+            mocker.call(status="error"),
+        ]
+    )
+
     if dry_run:
         os_client.block_storage.delete_snapshot.assert_not_called()
         return
 
     assert os_client.block_storage.delete_snapshot.call_count == len(
         expired_snapshot
-    ) + len(nok_snapshot_delete) + len(nok_snapshot_is_deleted)
+    ) + len(errored_snapshots) + len(nok_snapshot_delete) + len(nok_snapshot_is_deleted)
+
     for snapshot in expired_snapshot + nok_snapshot_delete + nok_snapshot_is_deleted:
         os_client.block_storage.delete_snapshot.assert_any_call(snapshot)
+
     assert log.has(
         "Processed all snapshots in project",
-        destroyed_snapshot=len(expired_snapshot),
+        destroyed_snapshot=len(expired_snapshot) + len(errored_snapshots),
         errors=len(nok_snapshot_delete) + len(nok_snapshot_is_deleted),
         project=os_client.current_project_id,
     )

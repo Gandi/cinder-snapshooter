@@ -104,7 +104,10 @@ def delete_snapshot(
         reraise=True,
     ):
         with attempt:
-            os_client.block_storage.delete_snapshot(snapshot)
+            try:
+                os_client.block_storage.delete_snapshot(snapshot)
+            except ResourceNotFound:
+                return True
 
     for attempt in Retrying(
         wait=wait_random(min=1, max=3),
