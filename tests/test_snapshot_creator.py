@@ -22,6 +22,7 @@ import sys
 import pytest
 
 from dateutil.relativedelta import relativedelta
+from openstack.exceptions import ResourceNotFound
 
 import cinder_snapshooter.exceptions
 import cinder_snapshooter.snapshot_creator
@@ -100,27 +101,41 @@ def test_process_volumes(mocker, faker, log, dry_run, error):
 
     nok_volumes = []
     if error is not None:
-        nok_volumes = [fake_volume(True) for i in range(faker.random_int(max=10))]
+        nok_volumes = [fake_volume(True) for i in range(faker.random_int(max=2))]
     ok_volumes += nok_volumes
     volumes += ok_volumes
+
+    os_client.block_storage.volumes.return_value = volumes
 
     def create_snapshot_if_needed(ivolume, _client, _wait_completion_timeout, _dry_run):
         if ivolume in nok_volumes:
             raise error(mocker.MagicMock())
         return ["a snapshot"]
 
-    os_client.block_storage.volumes.return_value = volumes
     cinder_snapshooter.snapshot_creator.create_snapshot_if_needed.side_effect = (
         create_snapshot_if_needed
     )
 
-    assert (
-        cinder_snapshooter.snapshot_creator.process_volumes(os_client, 1, dry_run) == (error is None)
-    )
+    # For snapshots in error, these will be called
+    os_client.block_storage.delete_snapshot.return_value = True
+    os_client.block_storage.get_snapshot.side_effect = ResourceNotFound
+
+    assert cinder_snapshooter.snapshot_creator.process_volumes(
+        os_client, 1, dry_run
+    ) == (error is None)
+
     assert (
         cinder_snapshooter.snapshot_creator.create_snapshot_if_needed.call_count
         == len(ok_volumes)
     )
+
+    if error == cinder_snapshooter.exceptions.SnapshotInError:
+        assert os_client.block_storage.delete_snapshot.call_count == len(nok_volumes)
+        assert os_client.block_storage.get_snapshot.call_count == len(nok_volumes)
+    else:
+        assert os_client.block_storage.delete_snapshot.call_count == 0
+        assert os_client.block_storage.get_snapshot.call_count == 0
+
     for volume in ok_volumes:
         cinder_snapshooter.snapshot_creator.create_snapshot_if_needed.assert_any_call(
             volume,

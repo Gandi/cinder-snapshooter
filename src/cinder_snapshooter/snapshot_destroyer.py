@@ -21,10 +21,7 @@ import sys
 
 import structlog
 
-from openstack.exceptions import ResourceNotFound
-from tenacity import Retrying, TryAgain, stop_after_delay, wait_random
-
-from .utils import run_on_all_projects
+from .utils import run_on_all_projects, delete_snapshot
 
 
 log = structlog.get_logger()
@@ -58,20 +55,8 @@ def process_snapshots(os_client, wait_completion_timeout, dry_run):
                     expire_at=expire_at.isoformat(),
                 )
                 if not dry_run:
-                    os_client.block_storage.delete_snapshot(snapshot)
-                    for attempt in Retrying(
-                        wait=wait_random(min=1, max=2),
-                        stop=stop_after_delay(wait_completion_timeout),
-                    ):
-                        with attempt:
-                            check_snapshot_deletion(os_client, snapshot.id)
-                            log.info(
-                                "Deleted snapshot",
-                                snapshot=snapshot.id,
-                                project=os_client.current_project_id,
-                                expire_at=expire_at.isoformat(),
-                            )
-                            destroyed_snapshot += 1
+                    delete_snapshot(os_client, snapshot, wait_completion_timeout)
+                    destroyed_snapshot += 1
             else:
                 log.debug(
                     "Keeping snapshot, still valid",
@@ -79,7 +64,11 @@ def process_snapshots(os_client, wait_completion_timeout, dry_run):
                     expire_at=expire_at.isoformat(),
                 )
         except Exception:
-            log.exception("Failed to delete snapshot", snapshot=snapshot.id)
+            log.exception(
+                "Failed to delete snapshot",
+                project=os_client.current_project_id,
+                snapshot=snapshot.id,
+            )
             errors += 1
     log.info(
         "Processed all snapshots in project",
@@ -88,14 +77,6 @@ def process_snapshots(os_client, wait_completion_timeout, dry_run):
         project=os_client.current_project_id,
     )
     return errors == 0
-
-
-def check_snapshot_deletion(os_client, snapshot_id: str):
-    try:
-        os_client.block_storage.get_snapshot(snapshot_id)
-    except ResourceNotFound:
-        return True
-    raise TryAgain
 
 
 def register_args(parser):

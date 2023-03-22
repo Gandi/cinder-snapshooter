@@ -24,6 +24,7 @@ import pytest
 from openstack.exceptions import ResourceNotFound
 
 import cinder_snapshooter.snapshot_destroyer
+import cinder_snapshooter.utils as utils
 
 from fixtures import FakeSnapshot
 
@@ -58,6 +59,8 @@ def test_cli(mocker, faker, success):
 @pytest.mark.parametrize("dry_run", [True, False], ids=["dry-run", "real-run"])
 @pytest.mark.parametrize("success", [True, False])
 def test_process_snapshots(mocker, faker, log, time_machine, dry_run, success):
+    # No retries to speedup test
+    mocker.patch.object(utils.delete_snapshot, '__defaults__', (0,))
     os_client = mocker.MagicMock()
     manual_snapshots = [
         FakeSnapshot(
@@ -86,10 +89,10 @@ def test_process_snapshots(mocker, faker, log, time_machine, dry_run, success):
         )
         for i in range(10)
     ]
-    nok_snapshot = []
-    nok_snapshot_deletion = []
+    nok_snapshot_delete = []
+    nok_snapshot_is_deleted = []
     if not success:
-        nok_snapshot = [
+        nok_snapshot_delete = [
             FakeSnapshot(
                 id=faker.uuid4(),
                 status="available",
@@ -99,9 +102,8 @@ def test_process_snapshots(mocker, faker, log, time_machine, dry_run, success):
                 volume_id=faker.uuid4(),
                 metadata={"expire_at": faker.date(end_datetime=now)},
             )
-            for i in range(10)
         ]
-        nok_snapshot_deletion = [
+        nok_snapshot_is_deleted = [
             FakeSnapshot(
                 id=faker.uuid4(),
                 status="available",
@@ -131,27 +133,27 @@ def test_process_snapshots(mocker, faker, log, time_machine, dry_run, success):
         manual_snapshots
         + not_expired_snapshot
         + expired_snapshot
-        + nok_snapshot
-        + nok_snapshot_deletion
+        + nok_snapshot_delete
+        + nok_snapshot_is_deleted
     )
     os_client.block_storage.snapshots.return_value = snapshots
 
     def delete_snapshot(isnapshot):
-        if isnapshot in nok_snapshot:
+        if isnapshot in nok_snapshot_delete:
             raise Exception()
         return 1
 
     os_client.block_storage.delete_snapshot.side_effect = delete_snapshot
 
     def get_snapshot(isnapshot):
-        if isnapshot in [s.id for s in nok_snapshot_deletion]:
+        if isnapshot in [s.id for s in nok_snapshot_is_deleted]:
             return mocker.MagicMock()
         raise ResourceNotFound()
 
     os_client.block_storage.get_snapshot.side_effect = get_snapshot
 
     assert (
-        cinder_snapshooter.snapshot_destroyer.process_snapshots(os_client, 1, dry_run)
+        cinder_snapshooter.snapshot_destroyer.process_snapshots(os_client, 0, dry_run)
         == success
         or dry_run
     )
@@ -163,12 +165,12 @@ def test_process_snapshots(mocker, faker, log, time_machine, dry_run, success):
 
     assert os_client.block_storage.delete_snapshot.call_count == len(
         expired_snapshot
-    ) + len(nok_snapshot) + len(nok_snapshot_deletion)
-    for snapshot in expired_snapshot + nok_snapshot + nok_snapshot_deletion:
+    ) + len(nok_snapshot_delete) + len(nok_snapshot_is_deleted)
+    for snapshot in expired_snapshot + nok_snapshot_delete + nok_snapshot_is_deleted:
         os_client.block_storage.delete_snapshot.assert_any_call(snapshot)
     assert log.has(
         "Processed all snapshots in project",
         destroyed_snapshot=len(expired_snapshot),
-        errors=len(nok_snapshot) + len(nok_snapshot_deletion),
+        errors=len(nok_snapshot_delete) + len(nok_snapshot_is_deleted),
         project=os_client.current_project_id,
     )

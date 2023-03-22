@@ -22,8 +22,18 @@ from openstack.block_storage.v3.snapshot import Snapshot
 
 class SnapshotInError(Exception):
     def __init__(self, snapshot: Snapshot):
-        self.volume_id = snapshot.volume_id
-        self.snapshot_id = snapshot.id
+        self.snapshot = snapshot
         super().__init__(
-            f"Snapshot {self.snapshot_id} for volume {self.volume_id} in error"
+            f"Snapshot {self.snapshot.id} for volume "
+            f"{self.snapshot.volume_id} in error"
+        )
+
+
+class SnapshotStillPresent(Exception):
+    def __init__(self, snapshot: Snapshot):
+        self.snapshot = snapshot
+        super().__init__(
+            f"Snapshot {self.snapshot.id} "
+            f"for volume {self.snapshot.volume_id} "
+            f"is still present with status {self.snapshot.status}"
         )

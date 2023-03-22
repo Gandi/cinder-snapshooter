@@ -35,7 +35,11 @@ from tenacity import (
 )
 
 from .exceptions import SnapshotInError
-from .utils import run_on_all_projects, str2bool
+from .utils import (
+    run_on_all_projects,
+    str2bool,
+    delete_snapshot,
+)
 
 
 log = structlog.get_logger()
@@ -137,6 +141,7 @@ def process_volumes(os_client, wait_completion_timeout, dry_run):
     """Process all volumes searching for the ones with automatic snapshots"""
     snapshot_created = 0
     errors = 0
+    in_error = []
     for volume in os_client.block_storage.volumes():
         if volume.status not in ["available", "in-use"]:
             continue
@@ -154,11 +159,12 @@ def process_volumes(os_client, wait_completion_timeout, dry_run):
             except SnapshotInError as err:
                 log.error(
                     "Created snapshot in error",
-                    volume=err.volume_id,
-                    snapshot=err.snapshot_id,
+                    volume=err.snapshot.volume_id,
+                    snapshot=err.snapshot.id,
                     project=os_client.current_project_id,
                 )
                 errors += 1
+                in_error.append(err.snapshot)
             except HttpException as err:
                 log.error(
                     "Failed to create snapshot",
@@ -175,6 +181,19 @@ def process_volumes(os_client, wait_completion_timeout, dry_run):
                     project=os_client.current_project_id,
                 )
                 errors += 1
+
+    # Delete failed snapshots right away.
+    # We can re-run the tool to try to create them again
+    for s in in_error:
+        try:
+            delete_snapshot(os_client, s, wait_completion_timeout)
+        except Exception:
+            log.exception(
+                "Failed to delete snapshot in error",
+                snapshot=s.id,
+                project=os_client.current_project_id,
+            )
+
     log.info(
         "All volumes processed for project",
         project=os_client.current_project_id,

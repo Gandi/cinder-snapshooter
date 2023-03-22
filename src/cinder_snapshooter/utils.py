@@ -21,9 +21,56 @@ import logging
 import eventlet
 import keystoneauth1.exceptions
 import structlog
+from typing import Optional
+
+from openstack.connection import Connection
+from openstack.exceptions import ResourceNotFound
+from openstack.block_storage.v3.snapshot import Snapshot
+from tenacity import (
+    Retrying,
+    stop_after_attempt,
+    stop_after_delay,
+    wait_random,
+)
+
+from .exceptions import SnapshotStillPresent
 
 
 log = structlog.get_logger()
+
+DEFAULT_DELETE_RETRIES = 3
+
+
+def delete_snapshot(
+    os_client: Connection,
+    snapshot: Snapshot,
+    timeout: int,
+    retries: Optional[int] = DEFAULT_DELETE_RETRIES,
+):
+    for attempt in Retrying(
+        wait=wait_random(min=1, max=3),
+        stop=stop_after_attempt(retries),
+        reraise=True,
+    ):
+        with attempt:
+            os_client.block_storage.delete_snapshot(snapshot)
+
+    for attempt in Retrying(
+        wait=wait_random(min=1, max=3),
+        stop=stop_after_delay(timeout),
+        reraise=True,
+    ):
+        with attempt:
+            try:
+                os_client.block_storage.get_snapshot(snapshot.id)
+            except ResourceNotFound:
+                log.info(
+                    "Deleted snapshot",
+                    snapshot=snapshot.id,
+                    project=os_client.current_project_id,
+                )
+                return True
+            raise SnapshotStillPresent(snapshot)
 
 
 def run_on_all_projects(os_client, process_function, pool_size, *args, **kwargs):
