@@ -25,6 +25,7 @@ from dateutil.relativedelta import relativedelta
 from openstack.block_storage.v3.snapshot import Snapshot
 from openstack.block_storage.v3.volume import Volume
 from openstack.connection import Connection
+from openstack.exceptions import HttpException
 from tenacity import (
     Retrying,
     TryAgain,
@@ -64,6 +65,7 @@ def create_snapshot_if_needed(
             snapshot=snapshot.id,
             metadata=snapshot.metadata,
             volume=volume.id,
+            project=os_client.current_project_id,
         )
         created_at = datetime.datetime.fromisoformat(snapshot.created_at)
         if "expire_at" not in snapshot.metadata:
@@ -79,6 +81,7 @@ def create_snapshot_if_needed(
                 "Already a snapshot today for this volume",
                 volume=volume.id,
                 snapshot=snapshot.id,
+                project=os_client.current_project_id,
             )
             return created_snapshots
 
@@ -107,6 +110,7 @@ def create_snapshot_if_needed(
                     "Created snapshot",
                     volume=volume.id,
                     snapshot=snapshot.id,
+                    project=os_client.current_project_id,
                     expire_at=expiry_date.date().isoformat(),
                     monthly=is_monthly,
                 )
@@ -120,6 +124,12 @@ def check_snapshot_creation(os_client, snapshot: Snapshot):
         return snapshot
     elif snapshot.status == "error":
         raise SnapshotInError(snapshot)
+    log.debug(
+        "Snapshot not done yet, waiting...",
+        project_id=os_client.current_project_id,
+        snapshot_id=snapshot.id,
+        status=snapshot.status,
+    )
     raise TryAgain
 
 
@@ -146,10 +156,24 @@ def process_volumes(os_client, wait_completion_timeout, dry_run):
                     "Created snapshot in error",
                     volume=err.volume_id,
                     snapshot=err.snapshot_id,
+                    project=os_client.current_project_id,
+                )
+                errors += 1
+            except HttpException as err:
+                log.error(
+                    "Failed to create snapshot",
+                    error=err.details,
+                    request_id=err.request_id,
+                    project=os_client.current_project_id,
+                    volume=volume.id,
                 )
                 errors += 1
             except Exception:
-                log.exception("Unable to create snapshot", volume=volume.id)
+                log.exception(
+                    "Unable to create snapshot",
+                    volume=volume.id,
+                    project=os_client.current_project_id,
+                )
                 errors += 1
     log.info(
         "All volumes processed for project",

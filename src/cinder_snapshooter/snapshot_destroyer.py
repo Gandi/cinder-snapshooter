@@ -37,7 +37,11 @@ def process_snapshots(os_client, wait_completion_timeout, dry_run):
     errors = 0
     for snapshot in os_client.block_storage.snapshots(status="available"):
         try:
-            log.debug("Looking at snapshot", snapshot=snapshot.id)
+            log.debug(
+                "Looking at snapshot",
+                snapshot=snapshot.id,
+                project=os_client.current_project_id,
+            )
             if "expire_at" not in snapshot.metadata:
                 continue
             expire_at = datetime.datetime.combine(
@@ -50,6 +54,7 @@ def process_snapshots(os_client, wait_completion_timeout, dry_run):
                 log.debug(
                     "Deleting snapshot",
                     snapshot=snapshot.id,
+                    project=os_client.current_project_id,
                     expire_at=expire_at.isoformat(),
                 )
                 if not dry_run:
@@ -63,6 +68,7 @@ def process_snapshots(os_client, wait_completion_timeout, dry_run):
                             log.info(
                                 "Deleted snapshot",
                                 snapshot=snapshot.id,
+                                project=os_client.current_project_id,
                                 expire_at=expire_at.isoformat(),
                             )
                             destroyed_snapshot += 1
