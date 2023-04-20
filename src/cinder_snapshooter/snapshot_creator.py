@@ -23,9 +23,11 @@ import structlog
 
 from dateutil.relativedelta import relativedelta
 from openstack.block_storage.v3.snapshot import Snapshot
+from openstack.block_storage.v3.volume import Volume
+from openstack.connection import Connection
 from tenacity import (
+    Retrying,
     TryAgain,
-    retry,
     retry_if_not_exception_type,
     stop_after_delay,
     wait_random,
@@ -40,9 +42,10 @@ cmd_help = "Creates automatic snapshots"
 
 
 def create_snapshot_if_needed(
-    volume,
-    os_client,
-    dry_run,
+    volume: Volume,
+    os_client: Connection,
+    wait_completion_timeout: int,
+    dry_run: bool,
 ):
     """Create a snapshot if there isn't one for this volume today
     The snapshot will expire in 7 day unless it is the first of the month where it
@@ -92,39 +95,35 @@ def create_snapshot_if_needed(
             is_forced=True,  # create snapshot even if volume is attached
             metadata={"expire_at": expiry_date.date().isoformat()},
         )
-        log.info(
-            "Created snapshot",
-            volume=volume.id,
-            snapshot=snapshot.id,
-            expire_at=expiry_date.date().isoformat(),
-            monthly=is_monthly,
-        )
 
-        created_snapshots.append(wait_for_snapshot_creation(os_client, snapshot))
+        for attempt in Retrying(
+            wait=wait_random(min=1, max=2),
+            stop=stop_after_delay(wait_completion_timeout),
+            retry=retry_if_not_exception_type(SnapshotInError),
+        ):
+            with attempt:
+                created_snapshots.append(check_snapshot_creation(os_client, snapshot))
+                log.info(
+                    "Created snapshot",
+                    volume=volume.id,
+                    snapshot=snapshot.id,
+                    expire_at=expiry_date.date().isoformat(),
+                    monthly=is_monthly,
+                )
 
     return created_snapshots
 
 
-@retry(
-    wait=wait_random(min=1, max=2),
-    stop=stop_after_delay(30),
-    retry=retry_if_not_exception_type(SnapshotInError),
-)
-def wait_for_snapshot_creation(os_client, snapshot: Snapshot):
+def check_snapshot_creation(os_client, snapshot: Snapshot):
     snapshot = os_client.block_storage.get_snapshot(snapshot.id)
     if snapshot.status == "available":
-        log.info(
-            "Created snapshot",
-            volume=snapshot.volume_id,
-            snapshot=snapshot.id,
-        )
         return snapshot
     elif snapshot.status == "error":
         raise SnapshotInError(snapshot)
     raise TryAgain
 
 
-def process_volumes(os_client, dry_run):
+def process_volumes(os_client, wait_completion_timeout, dry_run):
     """Process all volumes searching for the ones with automatic snapshots"""
     snapshot_created = 0
     errors = 0
@@ -138,6 +137,7 @@ def process_volumes(os_client, dry_run):
                     create_snapshot_if_needed(
                         volume,
                         os_client,
+                        wait_completion_timeout,
                         dry_run,
                     )
                 )
@@ -174,7 +174,11 @@ def cli(args):
     """Entrypoint for CLI subcommand"""
     if not all(
         run_on_all_projects(
-            args.os_client, process_volumes, args.pool_size, args.dry_run
+            args.os_client,
+            process_volumes,
+            args.pool_size,
+            args.wait_completion_timeout,
+            args.dry_run,
         )
     ):
         sys.exit(1)  # Something went wrong during execution exit with 1

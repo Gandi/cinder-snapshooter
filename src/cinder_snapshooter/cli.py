@@ -27,7 +27,14 @@ def register_common_args(parser):
         dest="pool_size",
         default=os.environ.get("POOL_SIZE", 20),
         type=int,
-        help="The number of snapshot to be processed concurrently",
+        help="The number of snapshots to be processed concurrently",
+    )
+    parser.add_argument(
+        "--wait-completion-timeout",
+        dest="wait_completion_timeout",
+        default=os.environ.get("WAIT_COMPLETION_TIMEOUT", 30),
+        type=int,
+        help="The time in seconds to wait for snapshot creation/deletion completion",
     )
 
     logging_group = parser.add_argument_group(

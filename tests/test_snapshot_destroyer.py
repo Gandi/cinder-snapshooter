@@ -41,12 +41,14 @@ def test_cli(mocker, faker, success):
         dry_run=faker.boolean(),
         os_client=mocker.MagicMock(),
         pool_size=10,
+        wait_completion_timeout=1,
     )
     cinder_snapshooter.snapshot_destroyer.cli(fake_args)
     cinder_snapshooter.snapshot_destroyer.run_on_all_projects.assert_called_once_with(
         fake_args.os_client,
         cinder_snapshooter.snapshot_destroyer.process_snapshots,
         fake_args.pool_size,
+        fake_args.wait_completion_timeout,
         fake_args.dry_run,
     )
     if not success:
@@ -149,7 +151,7 @@ def test_process_snapshots(mocker, faker, log, time_machine, dry_run, success):
     os_client.block_storage.get_snapshot.side_effect = get_snapshot
 
     assert (
-        cinder_snapshooter.snapshot_destroyer.process_snapshots(os_client, dry_run)
+        cinder_snapshooter.snapshot_destroyer.process_snapshots(os_client, 1, dry_run)
         == success
         or dry_run
     )

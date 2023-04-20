@@ -42,6 +42,7 @@ def test_cli(mocker, faker, success):
         dry_run=faker.boolean(),
         os_client=mocker.MagicMock(),
         pool_size=10,
+        wait_completion_timeout=1,
     )
 
     cinder_snapshooter.snapshot_creator.cli(fake_args)
@@ -50,6 +51,7 @@ def test_cli(mocker, faker, success):
         fake_args.os_client,
         cinder_snapshooter.snapshot_creator.process_volumes,
         fake_args.pool_size,
+        fake_args.wait_completion_timeout,
         fake_args.dry_run,
     )
     if not success:
@@ -102,7 +104,7 @@ def test_process_volumes(mocker, faker, log, dry_run, error):
     ok_volumes += nok_volumes
     volumes += ok_volumes
 
-    def create_snapshot_if_needed(ivolume, _client, _dry_run):
+    def create_snapshot_if_needed(ivolume, _client, _wait_completion_timeout, _dry_run):
         if ivolume in nok_volumes:
             raise error(mocker.MagicMock())
         return ["a snapshot"]
@@ -113,7 +115,7 @@ def test_process_volumes(mocker, faker, log, dry_run, error):
     )
 
     assert (
-        cinder_snapshooter.snapshot_creator.process_volumes(os_client, dry_run) == (error is None)
+        cinder_snapshooter.snapshot_creator.process_volumes(os_client, 1, dry_run) == (error is None)
     )
     assert (
         cinder_snapshooter.snapshot_creator.create_snapshot_if_needed.call_count
@@ -123,6 +125,7 @@ def test_process_volumes(mocker, faker, log, dry_run, error):
         cinder_snapshooter.snapshot_creator.create_snapshot_if_needed.assert_any_call(
             volume,
             os_client,
+            1,
             dry_run,
         )
 
@@ -218,7 +221,7 @@ def test_create_snapshot_if_needed(mocker, faker, time_machine, dry_run, last_sn
     time_machine.move_to(now)
 
     return_value = cinder_snapshooter.snapshot_creator.create_snapshot_if_needed(
-        volume, os_client, dry_run
+        volume, os_client, 1, dry_run
     )
     os_client.block_storage.snapshots.assert_called_once_with(
         status="available",
