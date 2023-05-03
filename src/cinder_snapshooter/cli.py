@@ -1,3 +1,8 @@
+import eventlet
+
+
+eventlet.monkey_patch()
+
 import argparse
 import os
 
@@ -15,7 +20,22 @@ def register_common_args(parser):
         "--os-cloud",
         dest="os_cloud",
         default=os.environ.get("OS_CLOUD"),
-        help="The cloud to connect to",
+        help="the cloud to connect to",
+    )
+    parser.add_argument(
+        "--pool-size",
+        dest="pool_size",
+        default=os.environ.get("POOL_SIZE", 20),
+        type=int,
+        help="the number of snapshots to be processed concurrently (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--wait-completion-timeout",
+        dest="wait_completion_timeout",
+        default=os.environ.get("WAIT_COMPLETION_TIMEOUT", 30),
+        type=int,
+        help="the time in seconds to wait for snapshot "
+        "creation/deletion completion (default: %(default)s)",
     )
 
     logging_group = parser.add_argument_group(

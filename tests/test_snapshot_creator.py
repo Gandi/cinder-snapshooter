@@ -22,7 +22,9 @@ import sys
 import pytest
 
 from dateutil.relativedelta import relativedelta
+from openstack.exceptions import ResourceNotFound
 
+import cinder_snapshooter.exceptions
 import cinder_snapshooter.snapshot_creator
 
 from fixtures import FakeSnapshot, FakeVolume
@@ -40,6 +42,8 @@ def test_cli(mocker, faker, success):
     fake_args = argparse.Namespace(
         dry_run=faker.boolean(),
         os_client=mocker.MagicMock(),
+        pool_size=10,
+        wait_completion_timeout=1,
     )
 
     cinder_snapshooter.snapshot_creator.cli(fake_args)
@@ -47,6 +51,8 @@ def test_cli(mocker, faker, success):
     cinder_snapshooter.snapshot_creator.run_on_all_projects.assert_called_once_with(
         fake_args.os_client,
         cinder_snapshooter.snapshot_creator.process_volumes,
+        fake_args.pool_size,
+        fake_args.wait_completion_timeout,
         fake_args.dry_run,
     )
     if not success:
@@ -54,8 +60,15 @@ def test_cli(mocker, faker, success):
 
 
 @pytest.mark.parametrize("dry_run", [True, False], ids=["dry_run", "real_run"])
-@pytest.mark.parametrize("success", [True, False])
-def test_process_volumes(mocker, faker, log, dry_run, success):
+@pytest.mark.parametrize(
+    "error",
+    [
+        None,
+        Exception,
+        cinder_snapshooter.exceptions.SnapshotInError,
+    ],
+)
+def test_process_volumes(mocker, faker, log, dry_run, error):
     os_client = mocker.MagicMock()
     mocker.patch("cinder_snapshooter.snapshot_creator.create_snapshot_if_needed")
 
@@ -87,33 +100,47 @@ def test_process_volumes(mocker, faker, log, dry_run, success):
     ok_volumes = [fake_volume(True) for i in range(faker.random_int(max=10))]
 
     nok_volumes = []
-    if not success:
-        nok_volumes = [fake_volume(True) for i in range(faker.random_int(max=10))]
+    if error is not None:
+        nok_volumes = [fake_volume(True) for i in range(faker.random_int(max=2))]
     ok_volumes += nok_volumes
     volumes += ok_volumes
 
-    def create_snapshot_if_needed(ivolume, _client, _dry_run):
+    os_client.block_storage.volumes.return_value = volumes
+
+    def create_snapshot_if_needed(ivolume, _client, _wait_completion_timeout, _dry_run):
         if ivolume in nok_volumes:
-            raise Exception()
+            raise error(mocker.MagicMock())
         return ["a snapshot"]
 
-    os_client.block_storage.volumes.return_value = volumes
     cinder_snapshooter.snapshot_creator.create_snapshot_if_needed.side_effect = (
         create_snapshot_if_needed
     )
 
-    assert (
-        cinder_snapshooter.snapshot_creator.process_volumes(os_client, dry_run)
-        == success
-    )
+    # For snapshots in error, these will be called
+    os_client.block_storage.delete_snapshot.return_value = True
+    os_client.block_storage.get_snapshot.side_effect = ResourceNotFound
+
+    assert cinder_snapshooter.snapshot_creator.process_volumes(
+        os_client, 1, dry_run
+    ) == (error is None)
+
     assert (
         cinder_snapshooter.snapshot_creator.create_snapshot_if_needed.call_count
         == len(ok_volumes)
     )
+
+    if error == cinder_snapshooter.exceptions.SnapshotInError:
+        assert os_client.block_storage.delete_snapshot.call_count == len(nok_volumes)
+        assert os_client.block_storage.get_snapshot.call_count == len(nok_volumes)
+    else:
+        assert os_client.block_storage.delete_snapshot.call_count == 0
+        assert os_client.block_storage.get_snapshot.call_count == 0
+
     for volume in ok_volumes:
         cinder_snapshooter.snapshot_creator.create_snapshot_if_needed.assert_any_call(
             volume,
             os_client,
+            1,
             dry_run,
         )
 
@@ -188,28 +215,41 @@ def test_create_snapshot_if_needed(mocker, faker, time_machine, dry_run, last_sn
             )
         )
     os_client.block_storage.snapshots.return_value = snapshots
+
+    snap_id = faker.uuid4()
+    snap_created_at = now.isoformat()
     os_client.block_storage.create_snapshot.return_value = FakeSnapshot(
-        id=faker.uuid4(),
+        id=snap_id,
+        status="creating",
+        volume_id=volume.id,
+        metadata={},
+        created_at=snap_created_at,
+    )
+    os_client.block_storage.get_snapshot.return_value = FakeSnapshot(
+        id=snap_id,
         status="available",
         volume_id=volume.id,
         metadata={},
-        created_at=now.isoformat(),
+        created_at=snap_created_at,
     )
+
     time_machine.move_to(now)
 
     return_value = cinder_snapshooter.snapshot_creator.create_snapshot_if_needed(
-        volume, os_client, dry_run
+        volume, os_client, 1, dry_run
     )
     os_client.block_storage.snapshots.assert_called_once_with(
         status="available",
         volume_id=volume.id,
     )
+
     if dry_run or last_snapshot == "in_day":
         assert return_value == []
         os_client.block_storage.create_snapshot.assert_not_called()
         return
 
-    assert return_value == [os_client.block_storage.create_snapshot.return_value]
+    assert return_value == [os_client.block_storage.get_snapshot.return_value]
+
     if last_snapshot == "in_month":
         expire_at = now + relativedelta(days=+7)
     else:

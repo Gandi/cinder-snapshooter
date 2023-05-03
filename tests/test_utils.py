@@ -122,6 +122,7 @@ def test_run_on_all_projects(mocker, faker, log):
     rv = cinder_snapshooter.utils.run_on_all_projects(
         os_client,
         process_function,
+        10,
         *process_function_args[0],
         **process_function_args[1],
     )
@@ -170,6 +171,7 @@ def test_run_on_all_project_raising(mocker, faker, log, return_code):
         rv = cinder_snapshooter.utils.run_on_all_projects(
             os_client,
             process_function,
+            10,
         )
         assert rv == []
         assert os_client.connect_as.call_args_list == [
@@ -189,4 +191,5 @@ def test_run_on_all_project_raising(mocker, faker, log, return_code):
             cinder_snapshooter.utils.run_on_all_projects(
                 os_client,
                 process_function,
+                10,
             )

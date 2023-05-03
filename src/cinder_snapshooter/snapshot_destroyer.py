@@ -21,51 +21,83 @@ import sys
 
 import structlog
 
-from .utils import run_on_all_projects
+from openstack.connection import Connection
+
+from .utils import delete_snapshot, run_on_all_projects
 
 
 log = structlog.get_logger()
 cmd_help = "Destroys expired snapshots"
 
 
-def process_snapshots(os_client, dry_run):
+def process_snapshots(
+    os_client: Connection,
+    wait_completion_timeout: int,
+    dry_run: bool,
+):
     """Delete every expired snapshot"""
     destroyed_snapshot = 0
     errors = 0
     for snapshot in os_client.block_storage.snapshots(status="available"):
-        try:
-            log.debug("Looking at snapshot", snapshot=snapshot.id)
-            if "expire_at" not in snapshot.metadata:
-                continue
-            expire_at = datetime.datetime.combine(
-                date=datetime.date.fromisoformat(snapshot.metadata["expire_at"]),
-                time=datetime.time.min,
-                tzinfo=datetime.timezone.utc,
+        log.debug(
+            "Looking at snapshot",
+            snapshot=snapshot.id,
+            project=os_client.current_project_id,
+        )
+        if "expire_at" not in snapshot.metadata:
+            continue
+        expire_at = datetime.datetime.combine(
+            date=datetime.date.fromisoformat(snapshot.metadata["expire_at"]),
+            time=datetime.time.min,
+            tzinfo=datetime.timezone.utc,
+        )
+        now = datetime.datetime.now(datetime.timezone.utc)
+        if now > expire_at:
+            log.debug(
+                "Deleting snapshot",
+                snapshot=snapshot.id,
+                project=os_client.current_project_id,
+                expire_at=expire_at.isoformat(),
             )
-            now = datetime.datetime.now(datetime.timezone.utc)
-            if now > expire_at:
-                log.debug(
-                    "Deleting snapshot",
-                    snapshot=snapshot.id,
-                    expire_at=expire_at.isoformat(),
-                )
-                if not dry_run:
-                    os_client.block_storage.delete_snapshot(snapshot)
-                    log.info(
-                        "Deleted snapshot",
-                        snapshot=snapshot.id,
-                        expire_at=expire_at.isoformat(),
-                    )
+            if not dry_run:
+                try:
+                    delete_snapshot(os_client, snapshot, wait_completion_timeout)
                     destroyed_snapshot += 1
-            else:
-                log.debug(
-                    "Keeping snapshot, still valid",
+                except Exception:
+                    log.exception(
+                        "Failed to delete snapshot",
+                        project=os_client.current_project_id,
+                        snapshot=snapshot.id,
+                    )
+                    errors += 1
+        else:
+            log.debug(
+                "Keeping snapshot, still valid",
+                snapshot=snapshot.id,
+                expire_at=expire_at.isoformat(),
+            )
+
+    # Cleanup left-over snapshots in error
+    for snapshot in os_client.block_storage.snapshots(status="error"):
+        if "expire_at" not in snapshot.metadata:
+            continue
+        log.debug(
+            "Deleting snapshot in error",
+            snapshot=snapshot.id,
+            project=os_client.current_project_id,
+        )
+        if not dry_run:
+            try:
+                delete_snapshot(os_client, snapshot, wait_completion_timeout)
+                destroyed_snapshot += 1
+            except Exception:
+                log.exception(
+                    "Failed to delete snapshot in error",
+                    project=os_client.current_project_id,
                     snapshot=snapshot.id,
-                    expire_at=expire_at.isoformat(),
                 )
-        except Exception:
-            log.exception("Failed destroying snapshot", snapshot=snapshot.id)
-            errors += 1
+                errors += 1
+
     log.info(
         "Processed all snapshots in project",
         destroyed_snapshot=destroyed_snapshot,
@@ -88,5 +120,13 @@ def register_args(parser):
 def cli(args):
     """Entrypoint for CLI subcommand"""
 
-    if not all(run_on_all_projects(args.os_client, process_snapshots, args.dry_run)):
+    if not all(
+        run_on_all_projects(
+            args.os_client,
+            process_snapshots,
+            args.pool_size,
+            args.wait_completion_timeout,
+            args.dry_run,
+        )
+    ):
         sys.exit(1)  # Something went wrong during execution exit with 1

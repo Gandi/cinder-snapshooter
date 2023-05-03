@@ -16,17 +16,126 @@ limitations under the License.
 
 SPDX-License-Identifier: Apache-2.0
 """
+import datetime
 import logging
 
+from typing import Optional
+
+import eventlet
 import keystoneauth1.exceptions
 import structlog
+
+from openstack.block_storage.v3.snapshot import Snapshot
+from openstack.block_storage.v3.volume import Volume
+from openstack.connection import Connection
+from openstack.exceptions import ResourceNotFound
+from tenacity import (
+    Retrying,
+    TryAgain,
+    retry_if_not_exception_type,
+    stop_after_attempt,
+    stop_after_delay,
+    wait_random,
+)
+
+from .exceptions import SnapshotInError, SnapshotStillPresent
 
 
 log = structlog.get_logger()
 
+DEFAULT_DELETE_RETRIES = 3
+DEFAULT_CREATE_RETRIES = 3
 
-def run_on_all_projects(os_client, process_function, *args, **kwargs):
-    return_value = []
+
+def create_snapshot(
+    os_client: Connection,
+    volume: Volume,
+    expiry_date: datetime.datetime,
+    timeout: int,
+    retries: Optional[int] = DEFAULT_CREATE_RETRIES,
+):
+    for attempt in Retrying(
+        wait=wait_random(min=1, max=3), stop=stop_after_attempt(retries)
+    ):
+        with attempt:
+            snapshot = os_client.block_storage.create_snapshot(
+                volume_id=volume.id,
+                description="Automatic daily snapshot",
+                is_forced=True,  # create snapshot even if volume is attached
+                metadata={"expire_at": expiry_date.date().isoformat()},
+            )
+
+    for attempt in Retrying(
+        wait=wait_random(min=1, max=3),
+        stop=stop_after_delay(timeout),
+        retry=retry_if_not_exception_type(SnapshotInError),
+    ):
+        with attempt:
+            snapshot = os_client.block_storage.get_snapshot(snapshot.id)
+            if snapshot.status == "available":
+                log.info(
+                    "Created snapshot",
+                    volume=volume.id,
+                    snapshot=snapshot.id,
+                    project=os_client.current_project_id,
+                    expire_at=expiry_date.date().isoformat(),
+                )
+                return snapshot
+            elif snapshot.status == "error":
+                raise SnapshotInError(snapshot)
+            log.debug(
+                "Snapshot not done yet, waiting...",
+                project_id=os_client.current_project_id,
+                snapshot_id=snapshot.id,
+                status=snapshot.status,
+            )
+            raise TryAgain
+
+
+def delete_snapshot(
+    os_client: Connection,
+    snapshot: Snapshot,
+    timeout: int,
+    retries: Optional[int] = DEFAULT_DELETE_RETRIES,
+):
+    for attempt in Retrying(
+        wait=wait_random(min=1, max=3),
+        stop=stop_after_attempt(retries),
+        reraise=True,
+    ):
+        with attempt:
+            try:
+                os_client.block_storage.delete_snapshot(snapshot)
+            except ResourceNotFound:
+                return True
+
+    for attempt in Retrying(
+        wait=wait_random(min=1, max=3),
+        stop=stop_after_delay(timeout),
+        reraise=True,
+    ):
+        with attempt:
+            try:
+                os_client.block_storage.get_snapshot(snapshot.id)
+            except ResourceNotFound:
+                log.info(
+                    "Deleted snapshot",
+                    snapshot=snapshot.id,
+                    project=os_client.current_project_id,
+                )
+                return True
+            raise SnapshotStillPresent(snapshot)
+
+
+def run_on_all_projects(
+    os_client: Connection,
+    process_function,
+    pool_size: int,
+    *args,
+    **kwargs,
+):
+    pool = eventlet.GreenPool(size=pool_size)
+    greenlets = []
     for trust_id, project_id in available_projects(os_client):
         log.debug("Processing project", project=project_id, trust=trust_id)
         if trust_id is None:
@@ -35,18 +144,31 @@ def run_on_all_projects(os_client, process_function, *args, **kwargs):
             os_project_client = os_client.connect_as(
                 trust_id=trust_id,
             )
+        greenlets.append(
+            {
+                "project_id": project_id,
+                "trust_id": trust_id,
+                "result": pool.spawn(
+                    process_function, os_project_client, *args, **kwargs
+                ),
+            }
+        )
+
+    return_value = []
+    for g in greenlets:
         try:
-            return_value.append(process_function(os_project_client, *args, **kwargs))
-        except keystoneauth1.exceptions.HTTPClientError as e:
-            if e.http_status == 403:
-                log.warning(
+            return_value.append(g["result"].wait())
+        except keystoneauth1.exceptions.HTTPClientError as err:
+            if err.http_status == 403:
+                log.error(
                     "No effective rights on project",
-                    project=project_id,
-                    req=e.request_id,
-                    trust=trust_id,
+                    project=g["project_id"],
+                    req=err.request_id,
+                    trust=g["trust_id"],
                 )
             else:
                 raise
+
     return return_value
 
 
