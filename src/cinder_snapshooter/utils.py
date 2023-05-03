@@ -127,7 +127,13 @@ def delete_snapshot(
             raise SnapshotStillPresent(snapshot)
 
 
-def run_on_all_projects(os_client, process_function, pool_size, *args, **kwargs):
+def run_on_all_projects(
+    os_client: Connection,
+    process_function,
+    pool_size: int,
+    *args,
+    **kwargs,
+):
     pool = eventlet.GreenPool(size=pool_size)
     greenlets = []
     for trust_id, project_id in available_projects(os_client):
@@ -152,12 +158,12 @@ def run_on_all_projects(os_client, process_function, pool_size, *args, **kwargs)
     for g in greenlets:
         try:
             return_value.append(g["result"].wait())
-        except keystoneauth1.exceptions.HTTPClientError as e:
-            if e.http_status == 403:
+        except keystoneauth1.exceptions.HTTPClientError as err:
+            if err.http_status == 403:
                 log.error(
                     "No effective rights on project",
                     project=g["project_id"],
-                    req=e.request_id,
+                    req=err.request_id,
                     trust=g["trust_id"],
                 )
             else:

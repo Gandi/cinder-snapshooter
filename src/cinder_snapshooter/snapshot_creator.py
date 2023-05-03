@@ -91,7 +91,11 @@ def create_snapshot_if_needed(
     return created_snapshots
 
 
-def process_volumes(os_client, wait_completion_timeout, dry_run):
+def process_volumes(
+    os_client: Connection,
+    wait_completion_timeout: int,
+    dry_run: bool,
+):
     """Process all volumes searching for the ones with automatic snapshots"""
     snapshot_created = 0
     errors = 0

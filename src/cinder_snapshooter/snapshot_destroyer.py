@@ -21,6 +21,8 @@ import sys
 
 import structlog
 
+from openstack.connection import Connection
+
 from .utils import delete_snapshot, run_on_all_projects
 
 
@@ -28,7 +30,11 @@ log = structlog.get_logger()
 cmd_help = "Destroys expired snapshots"
 
 
-def process_snapshots(os_client, wait_completion_timeout, dry_run):
+def process_snapshots(
+    os_client: Connection,
+    wait_completion_timeout: int,
+    dry_run: bool,
+):
     """Delete every expired snapshot"""
     destroyed_snapshot = 0
     errors = 0
