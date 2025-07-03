@@ -1,54 +1,51 @@
-[tool.poetry]
+[project]
+authors = [
+    {name = "Gandi Hosting Squad"},
+]
+license = {text = "Apache-2.0"}
+requires-python = "<4.0,>=3.9"
+dependencies = [
+    "openstacksdk<1.0.0,>=0.61.0",
+    "structlog<22.0.0,>=21.4.0",
+    "python-dateutil<3.0.0,>=2.8.2",
+    "eventlet>=0.26.0",
+    "tenacity<9.0.0,>=8.2.2",
+    "setuptools>=80.9.0",
+]
 name = "cinder_snapshooter"
 version = "2.0.0"
 description = "A set of scripts to run periodically in order to automate cinder snapshot creation/deletion"
-authors = [
-    "Nicolas Belouin <nicolas.belouin@gandi.net>"
+
+[project.scripts]
+cinder-snapshooter = "cinder_snapshooter.cli:cli"
+
+[dependency-groups]
+dev = [
+    "rich<11.0.0,>=10.15.2",
+    "black<23.0,>=22.3.0",
+    "pytest<7.0.0,>=6.2.5",
+    "pytest-mock<4.0.0,>=3.6.1",
+    "Faker<10.0.0,>=9.9.0",
+    "pytest-cov<4.0.0,>=3.0.0",
+    "time-machine<3.0.0,>=2.4.1",
+    "pylint<3.0.0,>=2.12.2",
+    "pytest-structlog<1.0,>=0.5",
+    "pytest-black",
+    "pytest-isort",
 ]
-license = "Apache-2.0"
 
-readme = "README.md"
-
-packages = [
-    { include = "cinder_snapshooter", from = "src" }
-]
-include = [
-    { path = "tests", format = "sdist" }
-]
-
-
-
-[tool.poetry.dependencies]
-python = "^3.7"
-openstacksdk = "^0.61.0"
-structlog = "^21.4.0"
-python-dateutil = "^2.8.2"
-eventlet = ">=0.26.0"
-tenacity = "^8.2.2"
-
-[tool.poetry.dev-dependencies]
-rich = "^10.15.2"
-black = "^21.11b1"
-pytest = "^6.2.5"
-pytest-mock = "^3.6.1"
-Faker = "^9.9.0"
-pytest-cov = "^3.0.0"
-time-machine = "^2.4.1"
-pylint = "^2.12.2"
-pytest-structlog = "^0.5"
+[tool.pdm.build]
+includes = ["src/cinder_snapshooter"]
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
-
-[tool.poetry.scripts]
-cinder-snapshooter = 'cinder_snapshooter.cli:cli'
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
 
 [tool.black]
-target-version = ['py37']
+target-version = ['py39']
 
 [tool.isort]
-py_version = 37
+py_version = 39
 profile = "black"
 force_single_line = false
 combine_as_imports = true
@@ -58,7 +55,7 @@ src_paths = ["src", "tests"]
 
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "-ra -q --cov=cinder_snapshooter"
+addopts = "-ra -q --cov=cinder_snapshooter --black --isort"
 testpaths = [
     "tests",
 ]
