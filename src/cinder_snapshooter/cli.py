@@ -7,6 +7,7 @@ import argparse
 import os
 
 import openstack
+import sentry_sdk
 
 from . import snapshot_creator, snapshot_destroyer
 from .utils import setup_logging
@@ -70,6 +71,10 @@ def parse_args(args=None):
 def cli():
     args = parse_args()
     setup_logging(args)
+
+    if os.environ.get("SENTRY_DSN"):
+        sentry_sdk.init()
+
     args.os_client = openstack.connect(cloud=args.os_cloud)
 
     args.func(args)

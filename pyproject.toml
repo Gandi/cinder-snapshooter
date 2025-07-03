@@ -11,6 +11,7 @@ dependencies = [
     "eventlet>=0.26.0",
     "tenacity<9.0.0,>=8.2.2",
     "setuptools>=80.9.0",
+    "sentry-sdk>=2.32.0",
 ]
 name = "cinder_snapshooter"
 version = "2.0.0"
