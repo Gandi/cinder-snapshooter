@@ -38,6 +38,12 @@ def register_common_args(parser):
         help="the time in seconds to wait for snapshot "
         "creation/deletion completion (default: %(default)s)",
     )
+    parser.add_argument(
+        "--project",
+        dest="projects",
+        default=[],
+        action="append",
+    )
 
     logging_group = parser.add_argument_group(
         "logging",

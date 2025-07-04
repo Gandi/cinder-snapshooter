@@ -12,7 +12,7 @@ import cinder_snapshooter.snapshot_destroyer
     "args,result",
     [
         (
-            ["--os-cloud", "hello", "--devel", "creator"],
+            ["--os-cloud", "hello", "--devel", "--project", "foo", "creator"],
             argparse.Namespace(
                 os_cloud="hello",
                 devel=True,
@@ -20,6 +20,7 @@ import cinder_snapshooter.snapshot_destroyer
                 verbose=0,
                 pool_size=20,
                 wait_completion_timeout=30,
+                projects=["foo"],
                 func=cinder_snapshooter.snapshot_creator.cli,
             ),
         ),
@@ -42,6 +43,7 @@ import cinder_snapshooter.snapshot_destroyer
                 verbose=3,
                 pool_size=30,
                 wait_completion_timeout=10,
+                projects=[],
                 func=cinder_snapshooter.snapshot_destroyer.cli,
             ),
         ),

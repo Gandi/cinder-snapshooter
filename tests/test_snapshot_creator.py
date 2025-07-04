@@ -33,8 +33,8 @@ from fixtures import FakeSnapshot, FakeVolume
 @pytest.mark.parametrize("success", [True, False])
 def test_cli(mocker, faker, success):
     mocker.patch("sys.exit")
-    mocker.patch("cinder_snapshooter.snapshot_creator.run_on_all_projects")
-    cinder_snapshooter.snapshot_creator.run_on_all_projects.return_value = [
+    mocker.patch("cinder_snapshooter.snapshot_creator.run_on_projects")
+    cinder_snapshooter.snapshot_creator.run_on_projects.return_value = [
         True,
         True,
         success,
@@ -44,14 +44,16 @@ def test_cli(mocker, faker, success):
         os_client=mocker.MagicMock(),
         pool_size=10,
         wait_completion_timeout=1,
+        projects=[],
     )
 
     cinder_snapshooter.snapshot_creator.cli(fake_args)
 
-    cinder_snapshooter.snapshot_creator.run_on_all_projects.assert_called_once_with(
+    cinder_snapshooter.snapshot_creator.run_on_projects.assert_called_once_with(
         fake_args.os_client,
         cinder_snapshooter.snapshot_creator.process_volumes,
         fake_args.pool_size,
+        fake_args.projects,
         fake_args.wait_completion_timeout,
         fake_args.dry_run,
     )

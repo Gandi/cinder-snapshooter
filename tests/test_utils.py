@@ -100,7 +100,7 @@ def test_available_projects(mocker, faker):
     ] + [(None, project.id) for project in projects]
 
 
-def test_run_on_all_projects(mocker, faker, log):
+def test_run_on_projects(mocker, faker, log):
     mocker.patch("cinder_snapshooter.utils.available_projects")
     projects = [
         (None, faker.uuid4()),
@@ -119,10 +119,11 @@ def test_run_on_all_projects(mocker, faker, log):
     process_function_rv = [faker.boolean() for _ in projects]
     process_function.side_effect = process_function_rv
 
-    rv = cinder_snapshooter.utils.run_on_all_projects(
+    rv = cinder_snapshooter.utils.run_on_projects(
         os_client,
         process_function,
         10,
+        [],
         *process_function_args[0],
         **process_function_args[1],
     )
@@ -168,10 +169,11 @@ def test_run_on_all_project_raising(mocker, faker, log, return_code):
     )
 
     if return_code == 403:
-        rv = cinder_snapshooter.utils.run_on_all_projects(
+        rv = cinder_snapshooter.utils.run_on_projects(
             os_client,
             process_function,
             10,
+            [],
         )
         assert rv == []
         assert os_client.connect_as.call_args_list == [
@@ -188,8 +190,9 @@ def test_run_on_all_project_raising(mocker, faker, log, return_code):
         ]
     else:
         with pytest.raises(keystoneauth1.exceptions.HTTPClientError):
-            cinder_snapshooter.utils.run_on_all_projects(
+            cinder_snapshooter.utils.run_on_projects(
                 os_client,
                 process_function,
                 10,
+                [],
             )

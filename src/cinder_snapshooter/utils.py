@@ -127,17 +127,18 @@ def delete_snapshot(
             raise SnapshotStillPresent(snapshot)
 
 
-def run_on_all_projects(
+def run_on_projects(
     os_client: Connection,
     process_function,
     pool_size: int,
+    projects: list,
     *args,
     **kwargs,
 ):
     pool = eventlet.GreenPool(size=pool_size)
     greenlets = []
-    for trust_id, project_id in available_projects(os_client):
-        log.debug("Processing project", project=project_id, trust=trust_id)
+    for trust_id, project_id in available_projects(os_client, limit_to=projects):
+        log.info("Processing project", project=project_id, trust=trust_id)
         if trust_id is None:
             os_project_client = os_client.connect_as(project_id=project_id)
         else:
@@ -172,14 +173,18 @@ def run_on_all_projects(
     return return_value
 
 
-def available_projects(os_client):
+def available_projects(os_client, limit_to=None):
     """List all projects we can operate on"""
 
     for trust in os_client.identity.trusts(trustee_user_id=os_client.current_user_id):
+        if limit_to and trust.project_id not in limit_to:
+            continue
         yield trust.id, trust.project_id
     for project in os_client.identity.user_projects(
         os_client.current_user_id, enabled=True
     ):
+        if limit_to and project.id not in limit_to:
+            continue
         yield None, project.id
 
 

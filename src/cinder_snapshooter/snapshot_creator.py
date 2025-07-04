@@ -27,7 +27,7 @@ from openstack.connection import Connection
 from openstack.exceptions import HttpException
 
 from .exceptions import SnapshotInError
-from .utils import create_snapshot, delete_snapshot, run_on_all_projects, str2bool
+from .utils import create_snapshot, delete_snapshot, run_on_projects, str2bool
 
 
 log = structlog.get_logger()
@@ -174,10 +174,11 @@ def register_args(parser):
 def cli(args):
     """Entrypoint for CLI subcommand"""
     if not all(
-        run_on_all_projects(
+        run_on_projects(
             args.os_client,
             process_volumes,
             args.pool_size,
+            args.projects,
             args.wait_completion_timeout,
             args.dry_run,
         )
