@@ -15,6 +15,7 @@ limitations under the License.
 
 SPDX-License-Identifier: Apache-2.0
 """
+
 import argparse
 import logging
 
@@ -168,31 +169,22 @@ def test_run_on_all_project_raising(mocker, faker, log, return_code):
         http_status=return_code,
     )
 
-    if return_code == 403:
-        rv = cinder_snapshooter.utils.run_on_projects(
-            os_client,
-            process_function,
-            10,
-            [],
-        )
-        assert rv == []
-        assert os_client.connect_as.call_args_list == [
-            mocker.call(project_id=projects[0][1]),
-            mocker.call(trust_id=projects[1][0]),
-        ]
-        assert process_function.call_args_list == [
-            mocker.call(
-                {"project_id": projects[0][1]},
-            ),
-            mocker.call(
-                {"trust_id": projects[1][0]},
-            ),
-        ]
-    else:
-        with pytest.raises(keystoneauth1.exceptions.HTTPClientError):
-            cinder_snapshooter.utils.run_on_projects(
-                os_client,
-                process_function,
-                10,
-                [],
-            )
+    rv = cinder_snapshooter.utils.run_on_projects(
+        os_client,
+        process_function,
+        10,
+        [],
+    )
+    assert rv == []
+    assert os_client.connect_as.call_args_list == [
+        mocker.call(project_id=projects[0][1]),
+        mocker.call(trust_id=projects[1][0]),
+    ]
+    assert process_function.call_args_list == [
+        mocker.call(
+            {"project_id": projects[0][1]},
+        ),
+        mocker.call(
+            {"trust_id": projects[1][0]},
+        ),
+    ]

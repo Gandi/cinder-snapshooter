@@ -127,6 +127,7 @@ dependencies = [
     { name = "sentry-sdk" },
     { name = "setuptools" },
     { name = "structlog" },
+    { name = "structlog-sentry" },
     { name = "tenacity" },
 ]
 
@@ -153,6 +154,7 @@ requires-dist = [
     { name = "sentry-sdk", specifier = ">=2.32.0" },
     { name = "setuptools", specifier = ">=80.9.0" },
     { name = "structlog", specifier = ">=21.4.0,<22.0.0" },
+    { name = "structlog-sentry", specifier = ">=2.2.1" },
     { name = "tenacity", specifier = ">=8.2.2,<9.0.0" },
 ]
 
@@ -910,6 +912,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ea/77/e38019e698b0c0134f903ab40e87f0975813ca7f74dad287272788134f03/structlog-21.5.0.tar.gz", hash = "sha256:68c4c29c003714fe86834f347cb107452847ba52414390a7ee583472bde00fc9", size = 473089 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4b/a2/7c5d78fa0b6fc4f249d0a732811b2cef979d16677e21f10637bbedcd0e6a/structlog-21.5.0-py3-none-any.whl", hash = "sha256:fd7922e195262b337da85c2a91c84be94ccab1f8fd1957bd6986f6904e3761c8", size = 53394 },
+]
+
+[[package]]
+name = "structlog-sentry"
+version = "2.2.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "sentry-sdk" },
+    { name = "structlog" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a9/c8/a6d66c4a691a47c9c572ab84640012bb70c8c4f710763bd544236d98f278/structlog_sentry-2.2.1.tar.gz", hash = "sha256:78cf8751c7712e361d9d5e82fcde6c3f692a67e3e67068ccdd46448014636138", size = 6855 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e3/ba/1b1226db704c16426d59e1fcbeaf5138dbc5a50d424aab92b453d33add47/structlog_sentry-2.2.1-py3-none-any.whl", hash = "sha256:868c82348bc18b7d51ef8f878c57e82835c1758dba38f7589fa02a267096a95d", size = 11218 },
 ]
 
 [[package]]

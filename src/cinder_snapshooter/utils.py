@@ -16,6 +16,7 @@ limitations under the License.
 
 SPDX-License-Identifier: Apache-2.0
 """
+
 import datetime
 import logging
 
@@ -29,6 +30,7 @@ from openstack.block_storage.v3.snapshot import Snapshot
 from openstack.block_storage.v3.volume import Volume
 from openstack.connection import Connection
 from openstack.exceptions import ResourceNotFound
+from structlog_sentry import SentryProcessor
 from tenacity import (
     Retrying,
     TryAgain,
@@ -168,7 +170,12 @@ def run_on_projects(
                     trust=g["trust_id"],
                 )
             else:
-                raise
+                log.exception(
+                    "Error while processing project",
+                    project=g["project_id"],
+                    req=err.request_id,
+                    trust=g["trust_id"],
+                )
 
     return return_value
 
@@ -202,6 +209,7 @@ def setup_logging(args):
         structlog.processors.StackInfoRenderer(),
         structlog.dev.set_exc_info,
         time_stamper,
+        SentryProcessor(event_level=logging.ERROR),
     ]
 
     if args.devel:
