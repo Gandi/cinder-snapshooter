@@ -23,7 +23,7 @@ import structlog
 
 from openstack.connection import Connection
 
-from .utils import delete_snapshot, run_on_all_projects
+from .utils import delete_snapshot, run_on_projects
 
 
 log = structlog.get_logger()
@@ -121,10 +121,11 @@ def cli(args):
     """Entrypoint for CLI subcommand"""
 
     if not all(
-        run_on_all_projects(
+        run_on_projects(
             args.os_client,
             process_snapshots,
             args.pool_size,
+            args.projects,
             args.wait_completion_timeout,
             args.dry_run,
         )
